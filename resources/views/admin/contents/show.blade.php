@@ -106,8 +106,8 @@
                                                   method="POST" class="d-inline">
                                                 @csrf @method('DELETE')
                                                 <button type="submit" class="btn btn-danger btn-sm"
-                                                        title="Удалить"
-                                                        onclick="return confirm('Удалить эту версию?')">
+                                                        title="Удалить навсегда"
+                                                        onclick="return confirm('Удалить эту версию и файл?')">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </form>

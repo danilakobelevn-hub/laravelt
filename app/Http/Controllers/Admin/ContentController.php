@@ -79,13 +79,23 @@ class ContentController extends Controller
     }
 
     // Скачивание версии
+    // Скачивание версии
     public function downloadVersion(Version $version)
     {
-        if (!Storage::disk('private')->exists($version->file_path)) {
-            return back()->with('error', 'Файл не найден на сервере');
-        }
+        try {
+            if (!Storage::disk('private')->exists($version->file_path)) {
+                \Log::error("File not found: {$version->file_path}");
+                return back()->with('error', 'Файл не найден на сервере');
+            }
 
-        return Storage::disk('private')->download($version->file_path, $version->file_name);
+            \Log::info("Downloading version: {$version->file_name}");
+
+            return Storage::disk('private')->download($version->file_path, $version->file_name);
+
+        } catch (\Exception $e) {
+            \Log::error("Error downloading version: " . $e->getMessage());
+            return back()->with('error', 'Ошибка при скачивании файла');
+        }
     }
 
     // Сохранение нового контента
@@ -253,28 +263,42 @@ class ContentController extends Controller
 
 
     // Полное удаление контента
+    // Полное удаление контента со всеми файлами
     public function forceDestroy($id)
     {
         $content = Content::withTrashed()->findOrFail($id);
 
-        // Удаляем все связанные файлы
-        foreach ($content->versions as $version) {
-            Storage::disk('private')->delete($version->file_path);
-            $version->forceDelete();
+        \Log::info("Starting force delete for content ID: {$content->id}");
+
+        try {
+            // Удаляем файлы версий
+            foreach ($content->versions as $version) {
+                if (Storage::disk('private')->exists($version->file_path)) {
+                    Storage::disk('private')->delete($version->file_path);
+                    \Log::info("Deleted version file: {$version->file_path}");
+                }
+                $version->forceDelete();
+            }
+
+            // Удаляем все связанные данные
+            $content->localizedStrings()->forceDelete();
+            $content->imageLinks()->forceDelete();
+            $content->videoLinks()->forceDelete();
+            $content->availableLocales()->forceDelete();
+            $content->modules()->detach();
+
+            // Полностью удаляем контент
+            $content->forceDelete();
+
+            \Log::info("Content {$content->id} completely deleted");
+
+            return redirect()->route('admin.contents.index')
+                ->with('success', 'Контент полностью удален!');
+
+        } catch (\Exception $e) {
+            \Log::error("Error force deleting content: " . $e->getMessage());
+            return back()->with('error', 'Ошибка при удалении: ' . $e->getMessage());
         }
-
-        // Удаляем все связанные данные
-        $content->localizedStrings()->delete();
-        $content->imageLinks()->delete();
-        $content->videoLinks()->delete();
-        $content->availableLocales()->delete();
-        $content->modules()->detach();
-
-        // Полностью удаляем контент
-        $content->forceDelete();
-
-        return redirect()->route('admin.contents.index')
-            ->with('success', 'Контент полностью удален!');
     }
 
 
@@ -290,10 +314,13 @@ class ContentController extends Controller
     }
 
 // Восстановление контента
+    // Восстановление контента
     public function restore($id)
     {
         $content = Content::withTrashed()->findOrFail($id);
         $content->restore();
+
+        \Log::info("Content {$content->id} restored from trash");
 
         return redirect()->route('admin.contents.show', $content)
             ->with('success', 'Контент восстановлен!');
@@ -361,12 +388,23 @@ class ContentController extends Controller
     // Удаление версии
     public function destroyVersion(Version $version)
     {
-        // Удаляем файл
-        Storage::disk('private')->delete($version->file_path);
+        try {
+            // Удаляем файл
+            if (Storage::disk('private')->exists($version->file_path)) {
+                Storage::disk('private')->delete($version->file_path);
+                \Log::info("Deleted version file: {$version->file_path}");
+            }
 
-        // Удаляем запись
-        $version->delete();
+            // Удаляем запись
+            $version->forceDelete();
 
-        return back()->with('success', 'Версия удалена!');
+            \Log::info("Version {$version->id} completely deleted");
+
+            return back()->with('success', 'Версия полностью удалена!');
+
+        } catch (\Exception $e) {
+            \Log::error("Error deleting version: " . $e->getMessage());
+            return back()->with('error', 'Ошибка при удалении версии');
+        }
     }
 }

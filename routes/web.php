@@ -27,4 +27,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::get('/subsections-by-section/{sectionId}', [ContentController::class, 'getSubsections'])
         ->name('subsections.by-section');
+
+    Route::get('/contents/trashed', [ContentController::class, 'trashed'])
+        ->name('contents.trashed');
+
+    Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
+        ->name('contents.restore');
+
 });

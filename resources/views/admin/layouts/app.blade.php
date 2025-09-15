@@ -25,6 +25,12 @@
                     <i class="fas fa-bars"></i>
                 </a>
             </li>
+            <li class="nav-item">
+                <a href="{{ route('admin.contents.trashed') }}" class="nav-link">
+                    <i class="nav-icon fas fa-trash"></i>
+                    <p>Корзина</p>
+                </a>
+            </li>
         </ul>
     </nav>
 
