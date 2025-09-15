@@ -40,11 +40,16 @@ class ContentController extends Controller
         return view('admin.contents.create', compact('sections', 'modules', 'locales'));
     }
 
-    // Получение подразделов для раздела (AJAX)
-    public function getSubsections(Section $section)
+    public function getSubsections($sectionId)
     {
-        $subsections = $section->subsections()->pluck('default_name', 'id');
-        return response()->json($subsections);
+        try {
+            $subsections = Subsection::where('section_id', $sectionId)
+                ->pluck('default_name', 'id');
+
+            return response()->json($subsections);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 
     // Сохранение нового контента
