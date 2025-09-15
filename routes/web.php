@@ -39,4 +39,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::put('/versions/{version}', [ContentController::class, 'updateVersion'])
         ->name('versions.update');
+
+    Route::get('/admin/contents/{content}/edit', [ContentController::class, 'edit'])
+        ->name('admin.contents.edit');
+
+    Route::get('/admin/versions/{version}/edit', [ContentController::class, 'editVersion'])
+        ->name('admin.versions.edit');
+
 });
