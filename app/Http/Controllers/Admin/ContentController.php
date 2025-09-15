@@ -78,6 +78,16 @@ class ContentController extends Controller
         }
     }
 
+    // Скачивание версии
+    public function downloadVersion(Version $version)
+    {
+        if (!Storage::disk('private')->exists($version->file_path)) {
+            return back()->with('error', 'Файл не найден на сервере');
+        }
+
+        return Storage::disk('private')->download($version->file_path, $version->file_name);
+    }
+
     // Сохранение нового контента
     public function store(StoreContentRequest $request)
     {
@@ -207,11 +217,86 @@ class ContentController extends Controller
             ]);
         }
 
+        // Обновляем медиа-ссылки
+        $content->imageLinks()->delete();
+        if (!empty($validated['image_links'])) {
+            $links = array_filter(explode("\n", $validated['image_links']));
+            foreach ($links as $link) {
+                if (!empty(trim($link))) {
+                    ContentImageLink::create([
+                        'content_id' => $content->id,
+                        'link' => trim($link)
+                    ]);
+                }
+            }
+        }
+
+        $content->videoLinks()->delete();
+        if (!empty($validated['video_links'])) {
+            $links = array_filter(explode("\n", $validated['video_links']));
+            foreach ($links as $link) {
+                if (!empty(trim($link))) {
+                    ContentVideoLink::create([
+                        'content_id' => $content->id,
+                        'link' => trim($link)
+                    ]);
+                }
+            }
+        }
+
         // Обновляем модули
         $content->modules()->sync($validated['modules'] ?? []);
 
         return redirect()->route('admin.contents.show', $content)
             ->with('success', 'Контент успешно обновлен!');
+    }
+
+
+    // Полное удаление контента
+    public function forceDestroy($id)
+    {
+        $content = Content::withTrashed()->findOrFail($id);
+
+        // Удаляем все связанные файлы
+        foreach ($content->versions as $version) {
+            Storage::disk('private')->delete($version->file_path);
+            $version->forceDelete();
+        }
+
+        // Удаляем все связанные данные
+        $content->localizedStrings()->delete();
+        $content->imageLinks()->delete();
+        $content->videoLinks()->delete();
+        $content->availableLocales()->delete();
+        $content->modules()->detach();
+
+        // Полностью удаляем контент
+        $content->forceDelete();
+
+        return redirect()->route('admin.contents.index')
+            ->with('success', 'Контент полностью удален!');
+    }
+
+
+    // Список удаленных контентов
+    public function trashed()
+    {
+        $contents = Content::onlyTrashed()
+            ->with(['subsection.section'])
+            ->orderBy('deleted_at', 'desc')
+            ->paginate(20);
+
+        return view('admin.contents.trashed', compact('contents'));
+    }
+
+// Восстановление контента
+    public function restore($id)
+    {
+        $content = Content::withTrashed()->findOrFail($id);
+        $content->restore();
+
+        return redirect()->route('admin.contents.show', $content)
+            ->with('success', 'Контент восстановлен!');
     }
 
     // Удаление контента (soft delete)
