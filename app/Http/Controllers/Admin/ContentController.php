@@ -42,13 +42,39 @@ class ContentController extends Controller
 
     public function getSubsections($sectionId)
     {
-        try {
-            $subsections = Subsection::where('section_id', $sectionId)
-                ->pluck('default_name', 'id');
+        \Log::info("=== SUBSECTIONS REQUEST ===");
+        \Log::info("Section ID: " . $sectionId);
 
-            return response()->json($subsections);
+        try {
+            // Проверяем существование раздела
+            $section = Section::find($sectionId);
+            if (!$section) {
+                \Log::warning("Section not found: " . $sectionId);
+                return response()->json(['error' => 'Section not found'], 404);
+            }
+
+            \Log::info("Section found: " . $section->default_name);
+
+            // Получаем подразделы
+            $subsections = Subsection::where('section_id', $sectionId)
+                ->get(['id', 'default_name']);
+
+            \Log::info("Subsections count: " . $subsections->count());
+
+            if ($subsections->isEmpty()) {
+                \Log::warning("No subsections for section: " . $sectionId);
+                return response()->json([], 200);
+            }
+
+            $result = $subsections->pluck('default_name', 'id');
+            \Log::info("Result: " . json_encode($result));
+
+            return response()->json($result);
+
         } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+            \Log::error("EXCEPTION: " . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            return response()->json(['error' => 'Server error: ' . $e->getMessage()], 500);
         }
     }
 

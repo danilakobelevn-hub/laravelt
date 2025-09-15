@@ -135,13 +135,15 @@
             $('#subsection_id').html('<option value="">Загрузка...</option>');
 
             if (sectionId) {
+                // ИСПРАВЛЕННЫЙ URL - без префикса /admin в пути
                 $.get('/admin/subsections-by-section/' + sectionId, function(data) {
                     $('#subsection_id').html('<option value="">Выберите подраздел</option>');
                     $.each(data, function(key, value) {
                         $('#subsection_id').append('<option value="'+ key +'">'+ value +'</option>');
                     });
-                }).fail(function() {
-                    $('#subsection_id').html('<option value="">Ошибка загрузки</option>');
+                }).fail(function(xhr, status, error) {
+                    console.error('Error loading subsections:', error);
+                    $('#subsection_id').html('<option value="">Ошибка загрузки: ' + xhr.status + '</option>');
                 });
             } else {
                 $('#subsection_id').html('<option value="">Сначала выберите раздел</option>');

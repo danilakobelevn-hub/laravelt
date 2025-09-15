@@ -16,10 +16,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         ->name('contents.upload-version');
     Route::delete('versions/{version}', [ContentController::class, 'destroyVersion'])
         ->name('versions.destroy');
-});
 
-Route::get('/admin/subsections-by-section/{sectionId}', function($sectionId) {
-    $subsections = Subsection::where('section_id', $sectionId)
-        ->pluck('default_name', 'id');
-    return response()->json($subsections);
-})->name('admin.subsections.by-section');
+
+    Route::get('/subsections-by-section/{sectionId}', [ContentController::class, 'getSubsections'])
+        ->name('subsections.by-section');
+});
