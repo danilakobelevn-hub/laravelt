@@ -182,6 +182,35 @@ class ContentController extends Controller
         return view('admin.contents.edit', compact('content', 'sections', 'modules', 'locales'));
     }
 
+    // Форма редактирования версии
+    public function editVersion(Version $version)
+    {
+        $version->load('content');
+        return view('admin.versions.edit', compact('version'));
+    }
+
+// Обновление версии
+    public function updateVersion(UpdateVersionRequest $request, Version $version)
+    {
+        try {
+            $validated = $request->validated();
+
+            $version->update([
+                'release_note' => $validated['release_note'],
+                'tested' => $validated['tested'] ?? false,
+            ]);
+
+            \Log::info("Version {$version->id} updated");
+
+            return redirect()->route('admin.contents.show', $version->content_id)
+                ->with('success', 'Версия успешно обновлена!');
+
+        } catch (\Exception $e) {
+            \Log::error('Error updating version: ' . $e->getMessage());
+            return back()->with('error', 'Ошибка обновления: ' . $e->getMessage());
+        }
+    }
+
     // Обновление контента
     public function update(UpdateContentRequest $request, Content $content)
     {
@@ -338,51 +367,69 @@ class ContentController extends Controller
     // Загрузка новой версии
     public function uploadVersion(Request $request, Content $content)
     {
+        \Log::info('Upload version request received', $request->all());
+
         $validated = $request->validate([
             'platform' => 'required|string|in:android,ios,windows,web',
-            'major' => 'boolean',
-            'minor' => 'boolean',
-            'micro' => 'boolean',
+            'major' => 'sometimes|boolean',
+            'minor' => 'sometimes|boolean',
+            'micro' => 'sometimes|boolean',
             'release_note' => 'nullable|string',
-            'file' => 'required|file|mimes:zip|max:102400' // 100MB max
+            'file' => 'required|file|mimes:zip|max:102400'
         ]);
 
-        // Определяем номер версии
-        $latestVersion = Version::where('content_id', $content->id)
-            ->where('platform', $validated['platform'])
-            ->orderBy('major', 'desc')
-            ->orderBy('minor', 'desc')
-            ->orderBy('micro', 'desc')
-            ->first();
+        \Log::info('Validation passed', $validated);
 
-        $major = $latestVersion ? $latestVersion->major : 0;
-        $minor = $latestVersion ? $latestVersion->minor : 0;
-        $micro = $latestVersion ? $latestVersion->micro : 0;
+        try {
+            // Определяем номер версии
+            $latestVersion = Version::where('content_id', $content->id)
+                ->where('platform', $validated['platform'])
+                ->orderBy('major', 'desc')
+                ->orderBy('minor', 'desc')
+                ->orderBy('micro', 'desc')
+                ->first();
 
-        if ($validated['major']) $major++;
-        if ($validated['minor']) $minor++;
-        if ($validated['micro']) $micro++;
+            $major = $latestVersion ? $latestVersion->major : 0;
+            $minor = $latestVersion ? $latestVersion->minor : 0;
+            $micro = $latestVersion ? $latestVersion->micro : 0;
 
-        // Сохраняем файл
-        $file = $request->file('file');
-        $fileName = Str::random(40) . '.' . $file->getClientOriginalExtension();
-        $filePath = $file->storeAs('versions', $fileName, 'private');
+            // Увеличиваем версию согласно чекбоксам
+            if ($request->has('major') && $request->boolean('major')) $major++;
+            if ($request->has('minor') && $request->boolean('minor')) $minor++;
+            if ($request->has('micro') && $request->boolean('micro')) $micro++;
 
-        // Создаем версию
-        $version = Version::create([
-            'content_id' => $content->id,
-            'platform' => $validated['platform'],
-            'major' => $major,
-            'minor' => $minor,
-            'micro' => $micro,
-            'tested' => false,
-            'release_note' => $validated['release_note'],
-            'file_name' => $file->getClientOriginalName(),
-            'file_path' => $filePath,
-            'file_size' => $file->getSize(),
-        ]);
+            \Log::info("New version: {$major}.{$minor}.{$micro}");
 
-        return back()->with('success', 'Версия успешно загружена!');
+            // Сохраняем файл
+            $file = $request->file('file');
+            $fileName = Str::random(40) . '.' . $file->getClientOriginalExtension();
+            $filePath = $file->storeAs('versions', $fileName, 'private');
+
+            \Log::info("File stored: {$filePath}");
+
+            // Создаем версию
+            $version = Version::create([
+                'content_id' => $content->id,
+                'platform' => $validated['platform'],
+                'major' => $major,
+                'minor' => $minor,
+                'micro' => $micro,
+                'tested' => false,
+                'release_note' => $validated['release_note'] ?? null,
+                'file_name' => $file->getClientOriginalName(),
+                'file_path' => $filePath,
+                'file_size' => $file->getSize(),
+            ]);
+
+            \Log::info("Version created: {$version->id}");
+
+            return back()->with('success', 'Версия успешно загружена!');
+
+        } catch (\Exception $e) {
+            \Log::error('Error uploading version: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            return back()->with('error', 'Ошибка загрузки: ' . $e->getMessage());
+        }
     }
 
     // Удаление версии

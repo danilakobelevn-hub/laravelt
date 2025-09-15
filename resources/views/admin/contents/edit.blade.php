@@ -1,194 +1,67 @@
 @extends('admin.layouts.app')
 
-@section('title', 'Редактирование: ' . $content->default_name)
+@section('title', 'Редактирование версии')
 @section('breadcrumb')
     <li class="breadcrumb-item"><a href="{{ route('admin.contents.index') }}">Контент</a></li>
-    <li class="breadcrumb-item"><a href="{{ route('admin.contents.show', $content) }}">{{ $content->default_name }}</a></li>
-    <li class="breadcrumb-item active">Редактирование</li>
+    <li class="breadcrumb-item"><a href="{{ route('admin.contents.show', $version->content_id) }}">{{ $version->content->default_name }}</a></li>
+    <li class="breadcrumb-item active">Редактирование версии</li>
 @endsection
 
 @section('content')
     <div class="card">
         <div class="card-header">
-            <h3 class="card-title">Редактирование контента: {{ $content->default_name }}</h3>
+            <h3 class="card-title">Редактирование версии: {{ $version->major }}.{{ $version->minor }}.{{ $version->micro }}</h3>
         </div>
 
-        <form action="{{ route('admin.contents.update', $content) }}" method="POST">
+        <form action="{{ route('admin.versions.update', $version) }}" method="POST">
             @csrf @method('PUT')
 
             <div class="card-body">
-                <!-- Основная информация -->
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="alias">Alias *</label>
-                            <input type="text" class="form-control" id="alias" name="alias"
-                                   value="{{ old('alias', $content->alias) }}" required>
-                            <small class="form-text text-muted">Уникальный идентификатор</small>
+                            <label>Платформа</label>
+                            <input type="text" class="form-control" value="{{ $version->platform }}" disabled>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="default_name">Название по умолчанию *</label>
-                            <input type="text" class="form-control" id="default_name" name="default_name"
-                                   value="{{ old('default_name', $content->default_name) }}" required>
+                            <label>Версия</label>
+                            <input type="text" class="form-control" value="{{ $version->major }}.{{ $version->minor }}.{{ $version->micro }}" disabled>
                         </div>
                     </div>
                 </div>
 
-                <!-- Выбор раздела и подраздела -->
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="section_id">Раздел *</label>
-                            <select class="form-control select2" id="section_id" name="section_id" required>
-                                <option value="">Выберите раздел</option>
-                                @foreach($sections as $section)
-                                    <option value="{{ $section->id }}"
-                                        {{ $section->id == $content->subsection->section_id ? 'selected' : '' }}>
-                                        {{ $section->default_name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="subsection_id">Подраздел *</label>
-                            <select class="form-control select2" id="subsection_id" name="subsection_id" required>
-                                <option value="{{ $content->subsection_id }}" selected>
-                                    {{ $content->subsection->default_name }}
-                                </option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Локализации -->
-                <div class="card card-secondary">
-                    <div class="card-header">
-                        <h3 class="card-title">Локализации</h3>
-                    </div>
-                    <div class="card-body">
-                        @foreach($locales as $locale)
-                            @php
-                                $name = $content->localizedStrings
-                                    ->where('type', 'name')
-                                    ->where('locale', $locale)
-                                    ->first();
-                                $description = $content->localizedStrings
-                                    ->where('type', 'description')
-                                    ->where('locale', $locale)
-                                    ->first();
-                            @endphp
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Название ({{ strtoupper($locale) }}) *</label>
-                                        <input type="text" class="form-control"
-                                               name="names[{{ $locale }}]"
-                                               value="{{ old("names.{$locale}", $name->value ?? '') }}" required>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Описание ({{ strtoupper($locale) }})</label>
-                                        <textarea class="form-control"
-                                                  name="descriptions[{{ $locale }}]">{{ old("descriptions.{$locale}", $description->value ?? '') }}</textarea>
-                                    </div>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-
-                <!-- Дополнительные поля -->
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="access_type">Access Type</label>
-                            <input type="number" class="form-control" id="access_type" name="access_type"
-                                   value="{{ old('access_type', $content->access_type) }}" min="0" max="255">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Доступные языки *</label>
-                            <select class="form-control select2" name="available_locales[]" multiple required>
-                                @foreach($locales as $locale)
-                                    <option value="{{ $locale }}"
-                                        {{ $content->availableLocales->contains('locale', $locale) ? 'selected' : '' }}>
-                                        {{ strtoupper($locale) }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Модули -->
                 <div class="form-group">
-                    <label>Модули</label>
-                    <select class="form-control select2" name="modules[]" multiple>
-                        @foreach($modules as $module)
-                            <option value="{{ $module->id }}"
-                                {{ $content->modules->contains($module->id) ? 'selected' : '' }}>
-                                {{ $module->default_name }} ({{ $module->alias }})
-                            </option>
-                        @endforeach
-                    </select>
+                    <label for="release_note">Release Note</label>
+                    <textarea class="form-control" id="release_note" name="release_note"
+                              rows="4" placeholder="Что нового в этой версии?">{{ old('release_note', $version->release_note) }}</textarea>
                 </div>
 
-                <!-- Ссылки на медиа -->
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="tested" name="tested"
+                               value="1" {{ $version->tested ? 'checked' : '' }}>
+                        <label class="form-check-label" for="tested">Проверено (тестирование пройдено)</label>
+                    </div>
+                </div>
+
                 <div class="card card-secondary">
                     <div class="card-header">
-                        <h3 class="card-title">Медиа-ссылки</h3>
+                        <h3 class="card-title">Информация о файле</h3>
                     </div>
                     <div class="card-body">
-                        <div class="form-group">
-                            <label>Ссылки на изображения</label>
-                            <textarea class="form-control" name="image_links" placeholder="По одной ссылке на строку">@foreach($content->imageLinks as $link){{ $link->link }}{{ !$loop->last ? "\n" : '' }}@endforeach</textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Ссылки на видео</label>
-                            <textarea class="form-control" name="video_links" placeholder="По одной ссылке на строку">@foreach($content->videoLinks as $link){{ $link->link }}{{ !$loop->last ? "\n" : '' }}@endforeach</textarea>
-                        </div>
+                        <p><strong>Имя файла:</strong> {{ $version->file_name }}</p>
+                        <p><strong>Размер:</strong> {{ number_format($version->file_size / 1024 / 1024, 2) }} MB</p>
+                        <p><strong>Загружен:</strong> {{ $version->created_at->format('d.m.Y H:i') }}</p>
                     </div>
                 </div>
             </div>
 
             <div class="card-footer">
                 <button type="submit" class="btn btn-primary">Сохранить изменения</button>
-                <a href="{{ route('admin.contents.show', $content) }}" class="btn btn-default">Отмена</a>
+                <a href="{{ route('admin.contents.show', $version->content_id) }}" class="btn btn-default">Отмена</a>
             </div>
         </form>
     </div>
 @endsection
-
-@push('scripts')
-    <script>
-        $(document).ready(function() {
-            // Инициализация Select2
-            $('.select2').select2();
-
-            // Динамическая загрузка подразделов
-            $('#section_id').change(function() {
-                var sectionId = $(this).val();
-                $('#subsection_id').html('<option value="">Загрузка...</option>');
-
-                if (sectionId) {
-                    $.get('/admin/subsections-by-section/' + sectionId, function(data) {
-                        $('#subsection_id').html('<option value="">Выберите подраздел</option>');
-                        $.each(data, function(key, value) {
-                            $('#subsection_id').append('<option value="'+ key +'">'+ value +'</option>');
-                        });
-                    }).fail(function() {
-                        $('#subsection_id').html('<option value="">Ошибка загрузки</option>');
-                    });
-                } else {
-                    $('#subsection_id').html('<option value="">Сначала выберите раздел</option>');
-                }
-            });
-        });
-    </script>
-@endpush

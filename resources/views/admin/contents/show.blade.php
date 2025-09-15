@@ -98,12 +98,13 @@
                                         </td>
                                         <td>{{ $version->release_note ?? '-' }}</td>
                                         <td>
-                                            <a href="{{ route('admin.versions.download', $version) }}"
-                                               class="btn btn-info btn-sm" title="Скачать">
+                                            <a href="{{ route('admin.versions.download', $version) }}" class="btn btn-info btn-sm" title="Скачать">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <form action="{{ route('admin.versions.destroy', $version) }}"
-                                                  method="POST" class="d-inline">
+                                            <a href="{{ route('admin.versions.edit', $version) }}" class="btn btn-warning btn-sm" title="Редактировать">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <form action="{{ route('admin.versions.destroy', $version) }}" method="POST" class="d-inline">
                                                 @csrf @method('DELETE')
                                                 <button type="submit" class="btn btn-danger btn-sm"
                                                         title="Удалить навсегда"

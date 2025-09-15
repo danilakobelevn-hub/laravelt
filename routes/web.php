@@ -34,4 +34,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
         ->name('contents.restore');
 
+    Route::get('/versions/{version}/edit', [ContentController::class, 'editVersion'])
+        ->name('versions.edit');
+
+    Route::put('/versions/{version}', [ContentController::class, 'updateVersion'])
+        ->name('versions.update');
 });
