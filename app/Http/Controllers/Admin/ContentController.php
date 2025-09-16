@@ -423,15 +423,16 @@ class ContentController extends Controller
 
             \Log::info("Version created: {$version->id}");
 
-            return back()->with('success', 'Версия успешно загружена!');
+            return redirect()->route('admin.contents.show', $content)
+                ->with('success', 'Версия успешно загружена!');
 
         } catch (\Exception $e) {
             \Log::error('Error uploading version: ' . $e->getMessage());
             \Log::error($e->getTraceAsString());
-            return back()->with('error', 'Ошибка загрузки: ' . $e->getMessage());
+            return redirect()->route('admin.contents.show', $content)
+                ->with('error', 'Ошибка загрузки: ' . $e->getMessage());
         }
     }
-
     // Удаление версии
     public function destroyVersion(Version $version)
     {
