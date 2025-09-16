@@ -5,34 +5,13 @@ use Illuminate\Support\Facades\Route;
 
 // Админка
 Route::prefix('admin')->name('admin.')->group(function () {
-    // Главная
     Route::get('/dashboard', function () {
         return view('admin.dashboard');
     })->name('dashboard');
 
-    // Управление контентом
-    Route::resource('contents', ContentController::class);
-
-    Route::post('contents/{content}/upload-version', [ContentController::class, 'uploadVersion'])
-        ->name('contents.upload-version');
-
-    Route::delete('versions/{version}', [ContentController::class, 'destroyVersion'])
-        ->name('versions.destroy');
-
-    Route::get('/admin/versions/{version}/download', [ContentController::class, 'downloadVersion'])
-        ->name('versions.download');
-
-    Route::delete('contents/{content}/force', [ContentController::class, 'forceDestroy'])
-        ->name('contents.force-destroy');
-
+    // Сначала специфические маршруты
     Route::get('/subsections-by-section/{sectionId}', [ContentController::class, 'getSubsections'])
         ->name('subsections.by-section');
-
-    Route::get('/contents/trashed', [ContentController::class, 'trashed'])
-        ->name('contents.trashed');
-
-    Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
-        ->name('contents.restore');
 
     Route::get('/versions/{version}/edit', [ContentController::class, 'editVersion'])
         ->name('versions.edit');
@@ -40,10 +19,24 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::put('/versions/{version}', [ContentController::class, 'updateVersion'])
         ->name('versions.update');
 
-    Route::get('/admin/contents/{content}/edit', [ContentController::class, 'edit'])
-        ->name('admin.contents.edit');
+    Route::delete('versions/{version}', [ContentController::class, 'destroyVersion'])
+        ->name('versions.destroy');
 
-    Route::get('/admin/versions/{version}/edit', [ContentController::class, 'editVersion'])
-        ->name('admin.versions.edit');
+    Route::get('/versions/{version}/download', [ContentController::class, 'downloadVersion'])
+        ->name('versions.download');
 
+    Route::post('contents/{content}/upload-version', [ContentController::class, 'uploadVersion'])
+        ->name('contents.upload-version');
+
+    Route::delete('contents/{content}/force', [ContentController::class, 'forceDestroy'])
+        ->name('contents.force-destroy');
+
+    Route::get('/contents/trashed', [ContentController::class, 'trashed'])
+        ->name('contents.trashed');
+
+    Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
+        ->name('contents.restore');
+
+    // Затем resource (будет обрабатываться в последнюю очередь)
+    Route::resource('contents', ContentController::class);
 });

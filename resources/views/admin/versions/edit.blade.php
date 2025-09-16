@@ -14,7 +14,8 @@
         </div>
 
         <form action="{{ route('admin.versions.update', $version) }}" method="POST">
-            @csrf @method('PUT')
+            @csrf
+            @method('PUT')
 
             <div class="card-body">
                 <div class="row">

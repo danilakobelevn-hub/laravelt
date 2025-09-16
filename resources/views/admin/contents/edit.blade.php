@@ -177,7 +177,7 @@
                 $('#subsection_id').html('<option value="">Загрузка...</option>');
 
                 if (sectionId) {
-                    $.get('/admin/subsections-by-section/' + sectionId, function(data) {
+                    $.get('{{ url("/admin/subsections-by-section") }}/' + sectionId, function(data) {
                         $('#subsection_id').html('<option value="">Выберите подраздел</option>');
                         $.each(data, function(key, value) {
                             $('#subsection_id').append('<option value="'+ key +'">'+ value +'</option>');
