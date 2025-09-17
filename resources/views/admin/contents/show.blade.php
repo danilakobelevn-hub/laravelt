@@ -63,55 +63,88 @@
 
             <!-- Версии -->
             <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Версии</h3>
-                    <button class="btn btn-success btn-sm float-right" data-toggle="modal" data-target="#uploadVersionModal">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">Версии ({{ $content->versions->count() }})</h3>
+                    <button type="button" class="btn btn-success btn-sm" data-toggle="modal" data-target="#uploadVersionModal">
                         <i class="fas fa-upload"></i> Загрузить версию
                     </button>
                 </div>
                 <div class="card-body">
                     @if($content->versions->count() > 0)
                         <div class="table-responsive">
-                            <table class="table table-bordered table-hover">
-                                <thead>
+                            <table class="table table-striped table-hover">
+                                <thead class="thead-dark">
                                 <tr>
-                                    <th>Версия</th>
-                                    <th>Платформа</th>
-                                    <th>Размер</th>
-                                    <th>Статус</th>
-                                    <th>Release Note</th>
-                                    <th>Действия</th>
+                                    <th>Platform</th>
+                                    <th>Version</th>
+                                    <th>Tested</th>
+                                    <th>File</th>
+                                    <th>Size</th>
+                                    <th>Uploaded</th>
+                                    <th>Actions</th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                @foreach($content->versions as $version)
+                                @foreach($content->versions->sortByDesc('created_at') as $version)
                                     <tr>
-                                        <td>{{ $version->major }}.{{ $version->minor }}.{{ $version->micro }}</td>
                                         <td>
-                                            <span class="badge badge-info">{{ $version->platform }}</span>
+                                                <span class="badge badge-info">
+                                                    {{ ucfirst($version->platform) }}
+                                                </span>
                                         </td>
-                                        <td>{{ number_format($version->file_size / 1024 / 1024, 2) }} MB</td>
                                         <td>
-                                    <span class="badge badge-{{ $version->tested ? 'success' : 'warning' }}">
-                                        {{ $version->tested ? 'Проверено' : 'На проверке' }}
-                                    </span>
+                                            <strong>{{ $version->major }}.{{ $version->minor }}.{{ $version->micro }}</strong>
                                         </td>
-                                        <td>{{ $version->release_note ?? '-' }}</td>
                                         <td>
-                                            <a href="{{ route('admin.versions.download', $version) }}" class="btn btn-info btn-sm" title="Скачать">
-                                                <i class="fas fa-download"></i>
-                                            </a>
-                                            <a href="{{ route('admin.versions.edit', $version) }}" class="btn btn-warning btn-sm" title="Редактировать">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <form action="{{ route('admin.versions.destroy', $version) }}" method="POST" class="d-inline">
-                                                @csrf @method('DELETE')
-                                                <button type="submit" class="btn btn-danger btn-sm"
-                                                        title="Удалить навсегда"
-                                                        onclick="return confirm('Удалить эту версию и файл?')">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </form>
+                                                <span class="badge badge-{{ $version->tested ? 'success' : 'warning' }}">
+                                                    {{ $version->tested ? 'Yes' : 'No' }}
+                                                </span>
+                                        </td>
+                                        <td>
+                                            @if($version->file_path && Storage::disk('public')->exists($version->file_path))
+                                                <a href="{{ Storage::disk('public')->url($version->file_path) }}" download
+                                                   class="text-primary" title="Download {{ $version->file_name }}">
+                                                    <i class="fas fa-download mr-1"></i>
+                                                    {{ $version->file_name }}
+                                                </a>
+                                            @else
+                                                <span class="text-muted">
+                                                        <i class="fas fa-exclamation-triangle text-warning mr-1"></i>
+                                                        File not found
+                                                    </span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if($version->file_size)
+                                                {{ number_format($version->file_size / 1024 / 1024, 2) }} MB
+                                            @else
+                                                -
+                                            @endif
+                                        </td>
+                                        <td>{{ $version->created_at->format('Y-m-d H:i') }}</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <a href="{{ route('admin.versions.edit', $version->id) }}"
+                                                   class="btn btn-info" title="Edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+
+                                                <a href="{{ route('admin.versions.download', $version->id) }}"
+                                                   class="btn btn-success" title="Download" download>
+                                                    <i class="fas fa-download"></i>
+                                                </a>
+
+                                                <form action="{{ route('admin.versions.destroy', $version->id) }}"
+                                                      method="POST" class="d-inline">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="btn btn-danger"
+                                                            onclick="return confirm('Are you sure you want to delete this version?')"
+                                                            title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -119,82 +152,13 @@
                             </table>
                         </div>
                     @else
-                        <p class="text-muted text-center">Нет загруженных версий</p>
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            No versions uploaded yet. Click "Upload New Version" to add the first version.
+                        </div>
                     @endif
                 </div>
             </div>
-        </div>
-
-        <div class="col-md-4">
-            <!-- Статистика -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Статистика</h3>
-                </div>
-                <div class="card-body">
-                    <div class="info-box mb-3">
-                        <span class="info-box-icon bg-info"><i class="fas fa-code-branch"></i></span>
-                        <div class="info-box-content">
-                            <span class="info-box-text">Версий</span>
-                            <span class="info-box-number">{{ $content->versions->count() }}</span>
-                        </div>
-                    </div>
-
-                    <div class="info-box mb-3">
-                        <span class="info-box-icon bg-success"><i class="fas fa-puzzle-piece"></i></span>
-                        <div class="info-box-content">
-                            <span class="info-box-text">Модулей</span>
-                            <span class="info-box-number">{{ $content->modules->count() }}</span>
-                        </div>
-                    </div>
-
-                    <div class="info-box mb-3">
-                        <span class="info-box-icon bg-warning"><i class="fas fa-language"></i></span>
-                        <div class="info-box-content">
-                            <span class="info-box-text">Языков</span>
-                            <span class="info-box-number">{{ $content->availableLocales->count() }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Быстрые действия -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Действия</h3>
-                </div>
-                <div class="card-body">
-                    <a href="{{ route('admin.contents.edit', $content) }}" class="btn btn-primary btn-block mb-2">
-                        <i class="fas fa-edit"></i> Редактировать контент
-                    </a>
-
-                    <form action="{{ route('admin.contents.destroy', $content) }}" method="POST">
-                        @csrf @method('DELETE')
-                        <button type="submit" class="btn btn-danger btn-block"
-                                onclick="return confirm('Удалить этот контент? Это действие нельзя отменить.')">
-                            <i class="fas fa-trash"></i> Удалить контент
-                        </button>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Модули -->
-            @if($content->modules->count() > 0)
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Модули</h3>
-                    </div>
-                    <div class="card-body">
-                        @foreach($content->modules as $module)
-                            <div class="mb-2">
-                                <strong>{{ $module->default_name }}</strong>
-                                <br>
-                                <small class="text-muted">Type: {{ $module->type }}, Alias: {{ $module->alias }}</small>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-            @endif
         </div>
     </div>
 
@@ -206,7 +170,7 @@
                     <h5 class="modal-title">Загрузка новой версии</h5>
                     <button type="button" class="close" data-dismiss="modal">×</button>
                 </div>
-                <form action="{{ route('admin.contents.upload-version', $content) }}" method="POST" enctype="multipart/form-data">
+                <form action="{{ route('admin.contents.upload-version', $content) }}" method="POST" enctype="multipart/form-data" id="uploadVersionForm">
                     @csrf
                     <div class="modal-body">
                         <div class="form-group">
@@ -219,19 +183,24 @@
                             </select>
                         </div>
 
-                        <div class="form-group">
-                            <label>Тип обновления *</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="major" id="major">
-                                <label class="form-check-label" for="major">Major (крупное обновление)</label>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="major">Major Version *</label>
+                                    <input type="number" name="major" id="major" class="form-control" required min="0" value="1">
+                                </div>
                             </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="minor" id="minor">
-                                <label class="form-check-label" for="minor">Minor (новые функции)</label>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="minor">Minor Version *</label>
+                                    <input type="number" name="minor" id="minor" class="form-control" required min="0" value="0">
+                                </div>
                             </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="micro" id="micro">
-                                <label class="form-check-label" for="micro">Micro (исправления багов)</label>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="micro">Micro Version *</label>
+                                    <input type="number" name="micro" id="micro" class="form-control" required min="0" value="0">
+                                </div>
                             </div>
                         </div>
 
@@ -248,10 +217,15 @@
                             </div>
                             <small class="form-text text-muted">Максимальный размер: 100MB</small>
                         </div>
+
+                        <div class="form-group form-check">
+                            <input type="checkbox" name="tested" id="tested" class="form-check-input" value="1">
+                            <label for="tested" class="form-check-label">Mark as tested</label>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
-                        <button type="submit" class="btn btn-primary">Загрузить</button>
+                        <button type="submit" class="btn btn-primary" id="uploadSubmitBtn">Загрузить</button>
                     </div>
                 </form>
             </div>
@@ -261,10 +235,80 @@
 
 @push('scripts')
     <script>
-        // Показываем имя файла в input
+        // Имя файла в input
         $('.custom-file-input').on('change', function() {
             let fileName = $(this).val().split('\\').pop();
             $(this).next('.custom-file-label').addClass("selected").html(fileName);
+        });
+
+        // Обработка отправки формы с прогрессом
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadForm = document.getElementById('uploadVersionForm');
+            if (uploadForm) {
+                uploadForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+
+                    const submitBtn = document.getElementById('uploadSubmitBtn');
+                    const originalText = submitBtn.innerHTML;
+
+                    // Индикатор загрузки
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+                    const formData = new FormData(this);
+
+                    // CSRF токен
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                        || document.querySelector('input[name="_token"]')?.value;
+
+                    if (!csrfToken) {
+                        alert('CSRF token not found');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                        return;
+                    }
+
+                    // Заголовок для JSON response
+                    formData.append('ajax', '1');
+
+                    fetch(this.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': csrfToken
+                        }
+                    })
+                        .then(response => {
+                            // Проверяем Content-Type заголовок
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('application/json')) {
+                                return response.json();
+                            } else {
+                                throw new Error('Server returned HTML instead of JSON');
+                            }
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                $('#uploadVersionModal').modal('hide');
+                                alert(data.message || 'Version uploaded successfully!');
+                                setTimeout(() => {
+                                    location.reload();
+                                }, 1000);
+                            } else {
+                                alert(data.message || 'Upload failed');
+                                submitBtn.disabled = false;
+                                submitBtn.innerHTML = originalText;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('An error occurred during upload. Please check console for details.');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalText;
+                        });
+                });
+            }
         });
     </script>
 @endpush

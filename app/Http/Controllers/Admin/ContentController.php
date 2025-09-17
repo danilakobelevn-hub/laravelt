@@ -14,8 +14,10 @@ use App\Models\ContentLocalizedString;
 use App\Models\ContentImageLink;
 use App\Models\ContentVideoLink;
 use App\Models\ContentAvailableLocale;
+use App\Models\ContentVersionFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ContentController extends Controller
@@ -79,76 +81,115 @@ class ContentController extends Controller
     }
 
     // Скачивание версии
-    // Скачивание версии
     public function downloadVersion(Version $version)
     {
         try {
-            if (!Storage::disk('private')->exists($version->file_path)) {
-                \Log::error("File not found: {$version->file_path}");
+            \Log::info("Attempting to download version: {$version->id}, file: {$version->file_path}");
+
+            // Проверяем существование файла в public storage
+            if (!Storage::disk('public')->exists($version->file_path)) {
+                \Log::error("File not found in public storage: {$version->file_path}");
+
+                // Проверяем в private storage (если файл был загружен туда ранее)
+                if (Storage::disk('private')->exists($version->file_path)) {
+                    \Log::info("File found in private storage, downloading...");
+                    return Storage::disk('private')->download($version->file_path, $version->file_name);
+                }
+
                 return back()->with('error', 'Файл не найден на сервере');
             }
 
-            \Log::info("Downloading version: {$version->file_name}");
+            \Log::info("Downloading version from public storage: {$version->file_name}");
 
-            return Storage::disk('private')->download($version->file_path, $version->file_name);
+            // Скачиваем файл из public storage
+            return Storage::disk('public')->download($version->file_path, $version->file_name, [
+                'Content-Type' => 'application/zip',
+                'Content-Disposition' => 'attachment; filename="' . $version->file_name . '"'
+            ]);
 
         } catch (\Exception $e) {
-            \Log::error("Error downloading version: " . $e->getMessage());
-            return back()->with('error', 'Ошибка при скачивании файла');
+            \Log::error("Error downloading version {$version->id}: " . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+
+            return back()->with('error', 'Ошибка при скачивании файла: ' . $e->getMessage());
         }
     }
 
     // Сохранение нового контента
-    public function store(StoreContentRequest $request)
+    public function store(Request $request)
     {
-        $validated = $request->validated();
-
-        // Создаем контент
-        $content = Content::create([
-            'alias' => $validated['alias'],
-            'default_name' => $validated['default_name'],
-            'guid' => Str::uuid(),
-            'subsection_id' => $validated['subsection_id'],
-            'access_type' => $validated['access_type']
+        $validated = $request->validate([
+            'alias' => 'required|unique:contents,alias|max:255',
+            'default_name' => 'required|max:255',
+            'subsection_id' => 'required|exists:subsections,id',
+            'access_type' => 'required|integer|min:0|max:255',
+            'guid' => 'nullable|uuid',
+            'available_locales' => 'required|array',
+            'available_locales.*' => 'string|size:2',
         ]);
 
-        // Сохраняем локализации названий
-        foreach ($validated['names'] as $locale => $value) {
-            ContentLocalizedString::create([
-                'content_id' => $content->id,
-                'type' => 'name',
-                'locale' => $locale,
-                'value' => $value
-            ]);
-        }
+        \Log::info('Create content request received', $request->all());
 
-        // Сохраняем локализации описаний
-        foreach ($validated['descriptions'] as $locale => $value) {
-            if (!empty($value)) {
-                ContentLocalizedString::create([
+        try {
+            DB::beginTransaction();
+
+
+            $content = Content::create([
+                'alias' => $validated['alias'],
+                'default_name' => $validated['default_name'],
+                'subsection_id' => $validated['subsection_id'],
+                'access_type' => $validated['access_type'],
+                'guid' => $validated['guid'] ?? Str::uuid(),
+            ]);
+
+
+            foreach ($validated['available_locales'] as $locale) {
+                ContentAvailableLocale::create([
                     'content_id' => $content->id,
-                    'type' => 'description',
                     'locale' => $locale,
-                    'value' => $value
                 ]);
             }
-        }
 
-        // Сохраняем доступные локали
-        foreach ($validated['available_locales'] as $locale) {
-            ContentAvailableLocale::create([
-                'content_id' => $content->id,
-                'locale' => $locale
-            ]);
-        }
 
-        // Привязываем модули
-        if (!empty($validated['modules'])) {
-            $content->modules()->attach($validated['modules']);
-        }
+            if ($request->has('localized_names')) {
+                foreach ($request->localized_names as $locale => $name) {
+                    if (!empty($name)) {
+                        ContentLocalizedString::create([
+                            'content_id' => $content->id,
+                            'type' => 'name',
+                            'locale' => $locale,
+                            'value' => $name,
+                        ]);
+                    }
+                }
+            }
 
-        return redirect()->route('admin.contents.show', $content)
-            ->with('success', 'Контент успешно создан!');
+            if ($request->has('localized_descriptions')) {
+                foreach ($request->localized_descriptions as $locale => $description) {
+                    if (!empty($description)) {
+                        ContentLocalizedString::create([
+                            'content_id' => $content->id,
+                            'type' => 'description',
+                            'locale' => $locale,
+                            'value' => $description,
+                        ]);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('admin.contents.show', $content->id)
+                ->with('success', 'Content created successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Content creation failed: ' . $e->getMessage());
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to create content: ' . $e->getMessage());
+        }
     }
 
     // Просмотр контента
@@ -189,7 +230,7 @@ class ContentController extends Controller
         return view('admin.versions.edit', compact('version'));
     }
 
-// Обновление версии
+    // Обновление версии
     public function updateVersion(UpdateVersionRequest $request, Version $version)
     {
         try {
@@ -290,8 +331,6 @@ class ContentController extends Controller
             ->with('success', 'Контент успешно обновлен!');
     }
 
-
-    // Полное удаление контента
     // Полное удаление контента со всеми файлами
     public function forceDestroy($id)
     {
@@ -330,7 +369,6 @@ class ContentController extends Controller
         }
     }
 
-
     // Список удаленных контентов
     public function trashed()
     {
@@ -342,7 +380,6 @@ class ContentController extends Controller
         return view('admin.contents.trashed', compact('contents'));
     }
 
-// Восстановление контента
     // Восстановление контента
     public function restore($id)
     {
@@ -364,75 +401,88 @@ class ContentController extends Controller
             ->with('success', 'Контент помечен на удаление!');
     }
 
-    // Загрузка новой версии
+// Загрузка новой версии
     public function uploadVersion(Request $request, Content $content)
     {
-        \Log::info('Upload version request received', $request->all());
-
         $validated = $request->validate([
-            'platform' => 'required|string|in:android,ios,windows,web',
-            'major' => 'sometimes|boolean',
-            'minor' => 'sometimes|boolean',
-            'micro' => 'sometimes|boolean',
+            'platform' => 'required|string|max:255',
+            'major' => 'required|integer|min:0',
+            'minor' => 'required|integer|min:0',
+            'micro' => 'required|integer|min:0',
+            'tested' => 'boolean',
             'release_note' => 'nullable|string',
-            'file' => 'required|file|mimes:zip|max:102400'
+            'file' => 'required|file|mimes:zip|max:102400' // 100MB max, zip only
         ]);
 
-        \Log::info('Validation passed', $validated);
+        \Log::info('Upload version request received', [
+            'content_id' => $content->id,
+            'platform' => $validated['platform'],
+            'file' => $request->file('file') ? $request->file('file')->getClientOriginalName() : 'no file'
+        ]);
 
         try {
-            // Определяем номер версии
-            $latestVersion = Version::where('content_id', $content->id)
-                ->where('platform', $validated['platform'])
-                ->orderBy('major', 'desc')
-                ->orderBy('minor', 'desc')
-                ->orderBy('micro', 'desc')
-                ->first();
+            DB::beginTransaction();
 
-            $major = $latestVersion ? $latestVersion->major : 0;
-            $minor = $latestVersion ? $latestVersion->minor : 0;
-            $micro = $latestVersion ? $latestVersion->micro : 0;
-
-            // Увеличиваем версию согласно чекбоксам
-            if ($request->has('major') && $request->boolean('major')) $major++;
-            if ($request->has('minor') && $request->boolean('minor')) $minor++;
-            if ($request->has('micro') && $request->boolean('micro')) $micro++;
-
-            \Log::info("New version: {$major}.{$minor}.{$micro}");
-
-            // Сохраняем файл
-            $file = $request->file('file');
-            $fileName = Str::random(40) . '.' . $file->getClientOriginalExtension();
-            $filePath = $file->storeAs('versions', $fileName, 'private');
-
-            \Log::info("File stored: {$filePath}");
-
-            // Создаем версию
+            // Сначала создаем версию с пустыми значениями файла
             $version = Version::create([
                 'content_id' => $content->id,
                 'platform' => $validated['platform'],
-                'major' => $major,
-                'minor' => $minor,
-                'micro' => $micro,
-                'tested' => false,
+                'major' => $validated['major'],
+                'minor' => $validated['minor'],
+                'micro' => $validated['micro'],
+                'tested' => $validated['tested'] ?? false,
                 'release_note' => $validated['release_note'] ?? null,
-                'file_name' => $file->getClientOriginalName(),
-                'file_path' => $filePath,
-                'file_size' => $file->getSize(),
+                'file_name' => '', // временно пустое значение
+                'file_path' => '', // временно пустое значение
+                'file_size' => 0, // временно 0
             ]);
 
-            \Log::info("Version created: {$version->id}");
+            // Handle file upload
+            if ($request->hasFile('file')) {
+                $file = $request->file('file');
+                $fileName = time() . '_' . $file->getClientOriginalName();
+                $filePath = $file->storeAs('versions', $fileName, 'public');
 
-            return redirect()->route('admin.contents.show', $content)
-                ->with('success', 'Версия успешно загружена!');
+                // Обновляем версию с информацией о файле
+                $version->update([
+                    'file_name' => $fileName,
+                    'file_path' => $filePath,
+                    'file_size' => $file->getSize(),
+                ]);
+
+            }
+
+            DB::commit();
+
+            // Return JSON response for AJAX requests
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Version uploaded successfully!',
+                    'version' => $version
+                ]);
+            }
+
+            return redirect()->back()
+                ->with('success', 'Version uploaded successfully!');
 
         } catch (\Exception $e) {
-            \Log::error('Error uploading version: ' . $e->getMessage());
-            \Log::error($e->getTraceAsString());
-            return redirect()->route('admin.contents.show', $content)
-                ->with('error', 'Ошибка загрузки: ' . $e->getMessage());
+            DB::rollBack();
+            \Log::error('Version upload failed: ' . $e->getMessage());
+
+            // Return JSON response for AJAX requests
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to upload version: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return redirect()->back()
+                ->with('error', 'Failed to upload version: ' . $e->getMessage());
         }
     }
+
     // Удаление версии
     public function destroyVersion(Version $version)
     {
