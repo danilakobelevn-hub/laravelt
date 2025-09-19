@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Http\JsonResponse;
 
 class ContentController extends Controller
 {
@@ -80,6 +81,33 @@ class ContentController extends Controller
         }
     }
 
+    public function getSectionsTree(): JsonResponse
+    {
+        try {
+            $sections = Section::with('subsections')
+                ->where('is_active', true)
+                ->orderBy('order')
+                ->get();
+
+            $tree = $sections->map(function ($section) {
+                return [
+                    'id' => $section->id,
+                    'text' => $section->default_name,
+                    'children' => $section->subsections->map(function ($subsection) {
+                        return [
+                            'id' => 'sub_' . $subsection->id,
+                            'text' => $subsection->default_name
+                        ];
+                    })->toArray()
+                ];
+            });
+
+            return response()->json($tree);
+        } catch (\Exception $e) {
+            \Log::error('Error in getSectionsTree: ' . $e->getMessage());
+            return response()->json(['error' => 'Server error'], 500);
+        }
+    }
     // Скачивание версии
     public function downloadVersion(Version $version)
     {
@@ -253,82 +281,99 @@ class ContentController extends Controller
     }
 
     // Обновление контента
-    public function update(UpdateContentRequest $request, Content $content)
+    public function update(Request $request, Content $content)
     {
-        $validated = $request->validated();
-
-        // Обновляем основную информацию
-        $content->update([
-            'alias' => $validated['alias'],
-            'default_name' => $validated['default_name'],
-            'subsection_id' => $validated['subsection_id'],
-            'access_type' => $validated['access_type']
+        $validated = $request->validate([
+            'alias' => 'required|unique:contents,alias,' . $content->id,
+            'default_name' => 'required|max:255',
+            'subsection_id' => 'required|exists:subsections,id',
+            'access_type' => 'required|integer|min:0|max:255',
+            'available_locales' => 'required|array',
+            'available_locales.*' => 'string|size:2',
+            'names' => 'required|array',
+            'names.*' => 'required|string|max:255',
+            'descriptions' => 'array',
+            'descriptions.*' => 'nullable|string',
+            'modules' => 'array',
+            'modules.*' => 'exists:modules,id',
+            'image_links' => 'nullable|string',
+            'video_links' => 'nullable|string',
         ]);
 
-        // Удаляем старые локализации и создаем новые
-        $content->localizedStrings()->delete();
+        try {
+            DB::beginTransaction();
 
-        foreach ($validated['names'] as $locale => $value) {
-            ContentLocalizedString::create([
-                'content_id' => $content->id,
-                'type' => 'name',
-                'locale' => $locale,
-                'value' => $value
+            // Обновляем основную информацию
+            $content->update([
+                'alias' => $validated['alias'],
+                'default_name' => $validated['default_name'],
+                'subsection_id' => $validated['subsection_id'],
+                'access_type' => $validated['access_type']
             ]);
-        }
 
-        foreach ($validated['descriptions'] as $locale => $value) {
-            if (!empty($value)) {
-                ContentLocalizedString::create([
-                    'content_id' => $content->id,
-                    'type' => 'description',
+            // Обновляем локализации
+            $content->localizedStrings()->delete();
+            foreach ($validated['names'] as $locale => $value) {
+                $content->localizedStrings()->create([
+                    'type' => 'name',
                     'locale' => $locale,
                     'value' => $value
                 ]);
             }
-        }
 
-        // Обновляем доступные локали
-        $content->availableLocales()->delete();
-        foreach ($validated['available_locales'] as $locale) {
-            ContentAvailableLocale::create([
-                'content_id' => $content->id,
-                'locale' => $locale
-            ]);
-        }
-
-        // Обновляем медиа-ссылки
-        $content->imageLinks()->delete();
-        if (!empty($validated['image_links'])) {
-            $links = array_filter(explode("\n", $validated['image_links']));
-            foreach ($links as $link) {
-                if (!empty(trim($link))) {
-                    ContentImageLink::create([
-                        'content_id' => $content->id,
-                        'link' => trim($link)
-                    ]);
+            if (isset($validated['descriptions'])) {
+                foreach ($validated['descriptions'] as $locale => $value) {
+                    if (!empty($value)) {
+                        $content->localizedStrings()->create([
+                            'type' => 'description',
+                            'locale' => $locale,
+                            'value' => $value
+                        ]);
+                    }
                 }
             }
-        }
 
-        $content->videoLinks()->delete();
-        if (!empty($validated['video_links'])) {
-            $links = array_filter(explode("\n", $validated['video_links']));
-            foreach ($links as $link) {
-                if (!empty(trim($link))) {
-                    ContentVideoLink::create([
-                        'content_id' => $content->id,
-                        'link' => trim($link)
-                    ]);
+            // Обновляем доступные локали
+            $content->availableLocales()->delete();
+            foreach ($validated['available_locales'] as $locale) {
+                $content->availableLocales()->create(['locale' => $locale]);
+            }
+
+            // Обновляем связи с модулями
+            $content->modules()->sync($validated['modules'] ?? []);
+
+            // Обновляем медиа-ссылки
+            $content->imageLinks()->delete();
+            $content->videoLinks()->delete();
+
+            if (!empty($validated['image_links'])) {
+                $links = array_filter(explode("\n", $validated['image_links']));
+                foreach ($links as $link) {
+                    if (!empty(trim($link))) {
+                        $content->imageLinks()->create(['link' => trim($link)]);
+                    }
                 }
             }
+
+            if (!empty($validated['video_links'])) {
+                $links = array_filter(explode("\n", $validated['video_links']));
+                foreach ($links as $link) {
+                    if (!empty(trim($link))) {
+                        $content->videoLinks()->create(['link' => trim($link)]);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('admin.contents.show', $content)
+                ->with('success', 'Контент успешно обновлен!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Ошибка при обновлении: ' . $e->getMessage())
+                ->withInput();
         }
-
-        // Обновляем модули
-        $content->modules()->sync($validated['modules'] ?? []);
-
-        return redirect()->route('admin.contents.show', $content)
-            ->with('success', 'Контент успешно обновлен!');
     }
 
     // Полное удаление контента со всеми файлами
@@ -401,7 +446,7 @@ class ContentController extends Controller
             ->with('success', 'Контент помечен на удаление!');
     }
 
-// Загрузка новой версии
+    // Загрузка новой версии
     public function uploadVersion(Request $request, Content $content)
     {
         $validated = $request->validate([
@@ -505,4 +550,6 @@ class ContentController extends Controller
             return back()->with('error', 'Ошибка при удалении версии');
         }
     }
+
+
 }

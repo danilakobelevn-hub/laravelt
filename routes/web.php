@@ -9,6 +9,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         return view('admin.dashboard');
     })->name('dashboard');
 
+    Route::get('/contents/sections-tree', [ContentController::class, 'getSectionsTree'])
+        ->name('contents.sections-tree');
+
     // Сначала специфические маршруты
     Route::get('/subsections-by-section/{sectionId}', [ContentController::class, 'getSubsections'])
         ->name('subsections.by-section');
@@ -36,6 +39,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
         ->name('contents.restore');
+
+
 
     // Затем resource (будет обрабатываться в последнюю очередь)
     Route::resource('contents', ContentController::class);
