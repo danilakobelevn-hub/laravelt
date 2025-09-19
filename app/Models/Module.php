@@ -20,4 +20,19 @@ class Module extends Model
     {
         return $this->belongsToMany(Content::class, 'content_module');
     }
+    public function getName($locale = 'ru')
+    {
+        return $this->localizedStrings
+            ->where('type', 'name')
+            ->where('locale', $locale)
+            ->first()->value ?? $this->default_name;
+    }
+
+    public function getDescription($locale = 'ru')
+    {
+        return $this->localizedStrings
+            ->where('type', 'description')
+            ->where('locale', $locale)
+            ->first()->value ?? null;
+    }
 }

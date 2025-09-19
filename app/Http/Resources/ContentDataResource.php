@@ -14,20 +14,29 @@ class ContentDataResource extends JsonResource
             'alias' => $this->alias,
             'defaultName' => $this->default_name,
             'guid' => $this->guid,
-            'names' => ServerLocalizedStringResource::collection(
-                $this->localizedStrings->where('type', 'name')
-            ),
-            'descriptions' => ServerLocalizedStringResource::collection(
-                $this->localizedStrings->where('type', 'description')
-            ),
+            'names' => $this->formatLocalizedStrings('name'),
+            'descriptions' => $this->formatLocalizedStrings('description'),
             'imagesLinks' => $this->imageLinks->pluck('link')->toArray(),
             'videosLinks' => $this->videoLinks->pluck('link')->toArray(),
-            'availableLocales' => $this->availableLocales->pluck('locale')->toArray(),
+            'availableLocales' => $this->available_locales ?? [],
             'group' => $this->subsection->section->alias,
             'subGroup' => $this->subsection->alias,
             'accessType' => $this->access_type,
-            'modules' => ModuleDataResource::collection($this->modules),
-            'versions' => VersionDataResource::collection($this->versions),
+            'modules' => ModuleDataResource::collection($this->whenLoaded('modules')),
+            'versions' => VersionDataResource::collection($this->whenLoaded('versions')),
         ];
+    }
+    protected function formatLocalizedStrings($type)
+    {
+        return $this->localizedStrings
+            ->where('type', $type)
+            ->map(function ($item) {
+                return [
+                    'locale' => $item->locale,
+                    'value' => $item->value
+                ];
+            })
+            ->values()
+            ->toArray();
     }
 }

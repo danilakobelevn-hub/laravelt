@@ -28,7 +28,7 @@
             <h3 class="card-title">Создание нового контента</h3>
         </div>
 
-        <form action="{{ route('admin.contents.store') }}" method="POST" id="contentForm">
+        <form action="{{ route('admin.contents.store') }}" method="POST" id="contentForm" enctype="multipart/form-data">
             @csrf
             <input type="hidden" name="subsection_id" value="">
 
@@ -154,26 +154,66 @@
 
                 <div class="card card-secondary">
                     <div class="card-header">
-                        <h3 class="card-title">Медиа-ссылки</h3>
+                        <h3 class="card-title">Медиа-файлы</h3>
                     </div>
                     <div class="card-body">
                         <div class="form-group">
-                            <label>Ссылки на изображения</label>
-                            <textarea class="form-control @error('image_links') is-invalid @enderror"
-                                      name="image_links" placeholder="По одной ссылке на строку">{{ old('image_links') }}</textarea>
-                            <small class="form-text text-muted">Каждая ссылка с новой строки</small>
-                            @error('image_links')
+                            <label>Изображения</label>
+                            <input type="file" class="form-control @error('images') is-invalid @enderror"
+                                   name="images[]" multiple accept="image/*">
+                            <small class="form-text text-muted">Максимальный размер: 2MB. Форматы: JPEG, PNG, JPG, GIF, WebP</small>
+                            @error('images')
                             <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            @error('images.*')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+
+                            <!-- Показываем существующие изображения при редактировании -->
+                            @if(isset($content) && $content->imageLinks->count() > 0)
+                                <div class="mt-3">
+                                    <h6>Текущие изображения:</h6>
+                                    @foreach($content->imageLinks as $imageLink)
+                                        <div class="d-inline-block mr-2 mb-2 position-relative">
+                                            <img src="{{ $imageLink->link }}" alt="Image" style="height: 60px; width: auto;" class="img-thumbnail">
+                                            <button type="button" class="btn btn-danger btn-sm position-absolute"
+                                                    style="top: -5px; right: -5px;"
+                                                    onclick="deleteImage({{ $imageLink->id }})">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                            <br>
+                                            <small>{{ basename($imageLink->link) }}</small>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
                         </div>
+
                         <div class="form-group">
-                            <label>Ссылки на видео</label>
-                            <textarea class="form-control @error('video_links') is-invalid @enderror"
-                                      name="video_links" placeholder="По одной ссылке на строку">{{ old('video_links') }}</textarea>
-                            <small class="form-text text-muted">Каждая ссылка с новой строки</small>
-                            @error('video_links')
+                            <label>Видео</label>
+                            <input type="file" class="form-control @error('videos') is-invalid @enderror"
+                                   name="videos[]" multiple accept="video/*">
+                            <small class="form-text text-muted">Максимальный размер: 10MB. Форматы: MP4, MOV</small>
+                            @error('videos')
                             <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            @error('videos.*')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+
+                            <!-- Показываем существующие видео при редактировании -->
+                            @if(isset($content) && $content->videoLinks->count() > 0)
+                                <div class="mt-3">
+                                    <h6>Текущие видео:</h6>
+                                    @foreach($content->videoLinks as $videoLink)
+                                        <div class="d-inline-block mr-2 mb-2">
+                                            <i class="fas fa-video fa-2x"></i>
+                                            <br>
+                                            <small>{{ basename($videoLink->link) }}</small>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -227,6 +267,77 @@
                     alert('Пожалуйста, выберите подраздел');
                 }
             });
+        });
+    </script>
+@endpush
+@push('scripts')
+    <script>
+        // Предпросмотр изображений перед загрузкой
+        document.addEventListener('DOMContentLoaded', function() {
+            // Для изображений
+            const imageInput = document.querySelector('input[name="images[]"]');
+            if (imageInput) {
+                imageInput.addEventListener('change', function(e) {
+                    previewFiles(e.target.files, 'images');
+                });
+            }
+
+            // Для видео
+            const videoInput = document.querySelector('input[name="videos[]"]');
+            if (videoInput) {
+                videoInput.addEventListener('change', function(e) {
+                    previewFiles(e.target.files, 'videos');
+                });
+            }
+
+            function previewFiles(files, type) {
+                const previewContainer = document.getElementById(type + '-preview') || createPreviewContainer(type);
+
+                // Очищаем предыдущий предпросмотр
+                previewContainer.innerHTML = '';
+
+                if (files.length > 0) {
+                    const title = document.createElement('h6');
+                    title.textContent = 'Новые файлы:';
+                    title.className = 'mt-3';
+                    previewContainer.appendChild(title);
+                }
+
+                Array.from(files).forEach(file => {
+                    const fileDiv = document.createElement('div');
+                    fileDiv.className = 'd-inline-block mr-2 mb-2 text-center';
+
+                    if (type === 'images' && file.type.startsWith('image/')) {
+                        const img = document.createElement('img');
+                        img.src = URL.createObjectURL(file);
+                        img.style.height = '60px';
+                        img.style.width = 'auto';
+                        img.className = 'img-thumbnail';
+                        fileDiv.appendChild(img);
+                    } else {
+                        const icon = document.createElement('i');
+                        icon.className = type === 'images' ? 'fas fa-image fa-2x' : 'fas fa-video fa-2x';
+                        fileDiv.appendChild(icon);
+                    }
+
+                    const name = document.createElement('div');
+                    name.textContent = file.name;
+                    name.style.fontSize = '12px';
+                    name.className = 'text-truncate';
+                    name.style.maxWidth = '80px';
+                    fileDiv.appendChild(name);
+
+                    previewContainer.appendChild(fileDiv);
+                });
+            }
+
+            function createPreviewContainer(type) {
+                const container = document.createElement('div');
+                container.id = type + '-preview';
+                const input = document.querySelector(`input[name="${type}[]"]`);
+                input.parentNode.appendChild(container);
+                return container;
+            }
         });
     </script>
 @endpush

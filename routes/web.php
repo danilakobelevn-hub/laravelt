@@ -40,7 +40,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
         ->name('contents.restore');
 
-
+    Route::delete('/content-images/{imageLink}', [ContentController::class, 'deleteImage'])
+        ->name('content.images.delete');
 
     // Затем resource (будет обрабатываться в последнюю очередь)
     Route::resource('contents', ContentController::class);

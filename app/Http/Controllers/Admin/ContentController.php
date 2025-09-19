@@ -146,6 +146,8 @@ class ContentController extends Controller
     // Сохранение нового контента
     public function store(Request $request)
     {
+        \Log::info('Store request data:', $request->all());
+
         $validated = $request->validate([
             'alias' => 'required|unique:contents,alias|max:255',
             'default_name' => 'required|max:255',
@@ -154,6 +156,17 @@ class ContentController extends Controller
             'guid' => 'nullable|uuid',
             'available_locales' => 'required|array',
             'available_locales.*' => 'string|size:2',
+            'names' => 'required|array',
+            'names.*' => 'required|string|max:500',
+            'descriptions' => 'nullable|array',
+            'descriptions.*' => 'nullable|string|max:1000',
+            'modules' => 'nullable|array',
+            'modules.*' => 'exists:modules,id',
+            // УПРОЩЕННАЯ ВАЛИДАЦИЯ ФАЙЛОВ:
+            'images' => 'nullable|array',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'videos' => 'nullable|array',
+            'videos.*' => 'nullable|mimetypes:video/mp4,video/quicktime|max:10240',
         ]);
 
         \Log::info('Create content request received', $request->all());
@@ -161,46 +174,75 @@ class ContentController extends Controller
         try {
             DB::beginTransaction();
 
-
+            // Создаем контент
             $content = Content::create([
                 'alias' => $validated['alias'],
                 'default_name' => $validated['default_name'],
                 'subsection_id' => $validated['subsection_id'],
                 'access_type' => $validated['access_type'],
                 'guid' => $validated['guid'] ?? Str::uuid(),
+                'available_locales' => $validated['available_locales']
             ]);
 
-
-            foreach ($validated['available_locales'] as $locale) {
-                ContentAvailableLocale::create([
+            // Сохраняем локализации названий
+            foreach ($validated['names'] as $locale => $value) {
+                ContentLocalizedString::create([
                     'content_id' => $content->id,
+                    'type' => 'name',
                     'locale' => $locale,
+                    'value' => $value,
                 ]);
             }
 
-
-            if ($request->has('localized_names')) {
-                foreach ($request->localized_names as $locale => $name) {
-                    if (!empty($name)) {
+            // Сохраняем локализации описаний (если есть)
+            if (isset($validated['descriptions'])) {
+                foreach ($validated['descriptions'] as $locale => $value) {
+                    if (!empty($value)) {
                         ContentLocalizedString::create([
                             'content_id' => $content->id,
-                            'type' => 'name',
+                            'type' => 'description',
                             'locale' => $locale,
-                            'value' => $name,
+                            'value' => $value,
                         ]);
                     }
                 }
             }
 
-            if ($request->has('localized_descriptions')) {
-                foreach ($request->localized_descriptions as $locale => $description) {
-                    if (!empty($description)) {
-                        ContentLocalizedString::create([
-                            'content_id' => $content->id,
-                            'type' => 'description',
-                            'locale' => $locale,
-                            'value' => $description,
+            // Сохраняем модули (если есть)
+            if (isset($validated['modules'])) {
+                $content->modules()->sync($validated['modules']);
+            }
+
+            // ОБРАБОТКА ФАЙЛОВ С ПРОВЕРКОЙ
+            if ($request->hasFile('images')) {
+                $images = $request->file('images');
+                \Log::info('Images files:', ['count' => count($images), 'files' => array_map(function($file) {
+                    return $file ? $file->getClientOriginalName() : 'null';
+                }, $images)]);
+
+                foreach ($images as $image) {
+                    if ($image && $image->isValid()) {
+                        $path = $image->store('content/images', 'public');
+                        $content->imageLinks()->create([
+                            'link' => Storage::disk('public')->url($path)
                         ]);
+                        \Log::info('Image saved:', ['path' => $path]);
+                    }
+                }
+            }
+
+            // Обрабатываем загруженные видео
+            if ($request->hasFile('videos')) {
+                $videos = $request->file('videos');
+                \Log::info('Videos files:', ['count' => count($videos)]);
+
+                foreach ($videos as $video) {
+                    if ($video && $video->isValid()) {
+                        $path = $video->store('content/videos', 'public');
+                        $content->videoLinks()->create([
+                            'link' => Storage::disk('public')->url($path)
+                        ]);
+                        \Log::info('Video saved:', ['path' => $path]);
                     }
                 }
             }
@@ -213,6 +255,7 @@ class ContentController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Content creation failed: ' . $e->getMessage());
+            \Log::error('Trace: ' . $e->getTraceAsString());
 
             return redirect()->back()
                 ->withInput()
@@ -240,10 +283,38 @@ class ContentController extends Controller
         return view('admin.contents.show', compact('content'));
     }
 
+    public function deleteImage(ContentImageLink $imageLink)
+    {
+        try {
+            // Удаляем файл с диска
+            $path = parse_url($imageLink->link, PHP_URL_PATH);
+            $filePath = str_replace('/storage/', '', $path);
+
+            if (Storage::disk('public')->exists($filePath)) {
+                Storage::disk('public')->delete($filePath);
+            }
+
+            // Удаляем запись из БД
+            $imageLink->delete();
+
+            return response()->json(['success' => true]);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     // Форма редактирования
     public function edit(Content $content)
     {
-        $content->load(['localizedStrings', 'imageLinks', 'videoLinks', 'availableLocales', 'modules']);
+        $content->load([
+            'localizedStrings',
+            'imageLinks',
+            'videoLinks',
+            'availableLocales',
+            'modules',
+            'subsection.section'
+        ]);
         $sections = Section::with('subsections')->get();
         $modules = Module::all();
         $locales = ['ru', 'en', 'ar', 'zh', 'fr', 'de', 'es'];
@@ -259,11 +330,14 @@ class ContentController extends Controller
     }
 
     // Обновление версии
-    public function updateVersion(UpdateVersionRequest $request, Version $version)
+    public function updateVersion(Request $request, Version $version)
     {
-        try {
-            $validated = $request->validated();
+        $validated = $request->validate([
+            'release_note' => 'nullable|string|max:500',
+            'tested' => 'boolean',
+        ]);
 
+        try {
             $version->update([
                 'release_note' => $validated['release_note'],
                 'tested' => $validated['tested'] ?? false,
@@ -281,8 +355,12 @@ class ContentController extends Controller
     }
 
     // Обновление контента
+    // app/Http/Controllers/Admin/ContentController.php
+
     public function update(Request $request, Content $content)
     {
+        \Log::info('Update request data:', $request->all());
+
         $validated = $request->validate([
             'alias' => 'required|unique:contents,alias,' . $content->id,
             'default_name' => 'required|max:255',
@@ -291,14 +369,19 @@ class ContentController extends Controller
             'available_locales' => 'required|array',
             'available_locales.*' => 'string|size:2',
             'names' => 'required|array',
-            'names.*' => 'required|string|max:255',
-            'descriptions' => 'array',
-            'descriptions.*' => 'nullable|string',
-            'modules' => 'array',
+            'names.*' => 'required|string|max:500',
+            'descriptions' => 'nullable|array',
+            'descriptions.*' => 'nullable|string|max:1000',
+            'modules' => 'nullable|array',
             'modules.*' => 'exists:modules,id',
-            'image_links' => 'nullable|string',
-            'video_links' => 'nullable|string',
+            // УПРОЩЕННАЯ ВАЛИДАЦИЯ ФАЙЛОВ:
+            'images' => 'nullable|array',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'videos' => 'nullable|array',
+            'videos.*' => 'nullable|mimetypes:video/mp4,video/quicktime|max:10240',
         ]);
+
+        \Log::info('Validated data:', $validated);
 
         try {
             DB::beginTransaction();
@@ -308,23 +391,29 @@ class ContentController extends Controller
                 'alias' => $validated['alias'],
                 'default_name' => $validated['default_name'],
                 'subsection_id' => $validated['subsection_id'],
-                'access_type' => $validated['access_type']
+                'access_type' => $validated['access_type'],
+                'available_locales' => $validated['available_locales']
             ]);
 
-            // Обновляем локализации
+            // Удаляем старые локализации и создаем новые
             $content->localizedStrings()->delete();
+
+            // Сохраняем названия
             foreach ($validated['names'] as $locale => $value) {
-                $content->localizedStrings()->create([
+                ContentLocalizedString::create([
+                    'content_id' => $content->id,
                     'type' => 'name',
                     'locale' => $locale,
                     'value' => $value
                 ]);
             }
 
+            // Сохраняем описания
             if (isset($validated['descriptions'])) {
                 foreach ($validated['descriptions'] as $locale => $value) {
                     if (!empty($value)) {
-                        $content->localizedStrings()->create([
+                        ContentLocalizedString::create([
+                            'content_id' => $content->id,
                             'type' => 'description',
                             'locale' => $locale,
                             'value' => $value
@@ -333,44 +422,75 @@ class ContentController extends Controller
                 }
             }
 
-            // Обновляем доступные локали
-            $content->availableLocales()->delete();
-            foreach ($validated['available_locales'] as $locale) {
-                $content->availableLocales()->create(['locale' => $locale]);
-            }
-
-            // Обновляем связи с модулями
+            // Обновляем модули
             $content->modules()->sync($validated['modules'] ?? []);
 
-            // Обновляем медиа-ссылки
-            $content->imageLinks()->delete();
-            $content->videoLinks()->delete();
+            // ОБРАБОТКА ФАЙЛОВ С ПРОВЕРКОЙ И ЛОГИРОВАНИЕМ
+            if ($request->hasFile('images')) {
+                $images = $request->file('images');
+                \Log::info('Update - Images files:', ['count' => count($images)]);
 
-            if (!empty($validated['image_links'])) {
-                $links = array_filter(explode("\n", $validated['image_links']));
-                foreach ($links as $link) {
-                    if (!empty(trim($link))) {
-                        $content->imageLinks()->create(['link' => trim($link)]);
+                // Удаляем старые изображения только если загружаем новые
+                foreach ($content->imageLinks as $oldImage) {
+                    $path = parse_url($oldImage->link, PHP_URL_PATH);
+                    $filePath = str_replace('/storage/', '', $path);
+
+                    if (Storage::disk('public')->exists($filePath)) {
+                        Storage::disk('public')->delete($filePath);
+                    }
+                }
+                $content->imageLinks()->delete();
+
+                foreach ($images as $image) {
+                    if ($image && $image->isValid()) {
+                        $path = $image->store('content/images', 'public');
+                        $content->imageLinks()->create([
+                            'link' => Storage::disk('public')->url($path)
+                        ]);
+                        \Log::info('Image updated:', ['path' => $path]);
                     }
                 }
             }
 
-            if (!empty($validated['video_links'])) {
-                $links = array_filter(explode("\n", $validated['video_links']));
-                foreach ($links as $link) {
-                    if (!empty(trim($link))) {
-                        $content->videoLinks()->create(['link' => trim($link)]);
+            // Обрабатываем загруженные видео
+            if ($request->hasFile('videos')) {
+                $videos = $request->file('videos');
+                \Log::info('Update - Videos files:', ['count' => count($videos)]);
+
+                // Удаляем старые видео только если загружаем новые
+                foreach ($content->videoLinks as $oldVideo) {
+                    $path = parse_url($oldVideo->link, PHP_URL_PATH);
+                    $filePath = str_replace('/storage/', '', $path);
+
+                    if (Storage::disk('public')->exists($filePath)) {
+                        Storage::disk('public')->delete($filePath);
+                    }
+                }
+                $content->videoLinks()->delete();
+
+                foreach ($videos as $video) {
+                    if ($video && $video->isValid()) {
+                        $path = $video->store('content/videos', 'public');
+                        $content->videoLinks()->create([
+                            'link' => Storage::disk('public')->url($path)
+                        ]);
+                        \Log::info('Video updated:', ['path' => $path]);
                     }
                 }
             }
 
             DB::commit();
 
+            \Log::info('Content updated successfully: ' . $content->id);
+
             return redirect()->route('admin.contents.show', $content)
                 ->with('success', 'Контент успешно обновлен!');
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Error updating content: ' . $e->getMessage());
+            \Log::error('Trace: ' . $e->getTraceAsString());
+
             return back()->with('error', 'Ошибка при обновлении: ' . $e->getMessage())
                 ->withInput();
         }
