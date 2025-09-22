@@ -24,13 +24,34 @@ use Illuminate\Http\JsonResponse;
 class ContentController extends Controller
 {
     // Список всех контентов
-    public function index()
+    public function index(Request $request)
     {
-        $contents = Content::with(['subsection.section', 'versions'])
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
+        $query = Content::with(['subsection.section', 'versions', 'imageLinks', 'modules'])
+            ->withCount('versions');
 
-        return view('admin.contents.index', compact('contents'));
+        // Поиск
+        if ($request->has('search') && !empty($request->search)) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('default_name', 'like', "%{$search}%")
+                    ->orWhere('alias', 'like', "%{$search}%");
+            });
+        }
+
+        // Сортировка
+        $sortColumn = $request->get('sort', 'id');
+        $sortDirection = $request->get('direction', 'desc');
+
+        $allowedSortColumns = ['id', 'default_name', 'alias', 'subsection_id'];
+        if (in_array($sortColumn, $allowedSortColumns)) {
+            $query->orderBy($sortColumn, $sortDirection);
+        } else {
+            $query->orderBy('id', 'desc');
+        }
+
+        $contents = $query->paginate(20);
+
+        return view('admin.contents.index', compact('contents', 'sortColumn', 'sortDirection'));
     }
 
     // Форма создания контента

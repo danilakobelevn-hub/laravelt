@@ -9,60 +9,229 @@
 @section('content')
     <div class="row">
         <div class="col-md-8">
-            <!-- Основная информация -->
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">Основная информация</h3>
                     <div class="card-tools">
-                        <a href="{{ route('admin.contents.edit', $content) }}" class="btn btn-primary btn-sm">
-                            <i class="fas fa-edit"></i> Редактировать
-                        </a>
+                        <div class="btn-group">
+                            <a href="{{ route('admin.contents.edit', $content) }}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-edit"></i> Редактировать
+                            </a>
+                            <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#deleteModal">
+                                <i class="fas fa-trash"></i> Удалить
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
-                    <table class="table table-bordered">
-                        <tr><th>ID:</th><td>{{ $content->id }}</td></tr>
-                        <tr><th>Alias:</th><td>{{ $content->alias }}</td></tr>
-                        <tr><th>GUID:</th><td>{{ $content->guid }}</td></tr>
-                        <tr><th>Раздел:</th><td>{{ $content->subsection->section->default_name }} → {{ $content->subsection->default_name }}</td></tr>
-                        <tr><th>Access Type:</th><td>{{ $content->access_type }}</td></tr>
-                        <tr><th>Создан:</th><td>{{ $content->created_at->format('d.m.Y H:i') }}</td></tr>
-                    </table>
+                    <div class="row">
+                        <!-- Левая колонка - изображение -->
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                @if($content->imageLinks->count() > 0)
+                                    <img src="{{ $content->imageLinks->first()->link }}"
+                                         alt="{{ $content->default_name }}"
+                                         class="img-fluid rounded"
+                                         style="max-height: 300px; width: auto;"
+                                         onerror="this.src='/storage/empty.png'">
+                                @else
+                                    <img src="/storage/empty.png"
+                                         alt="No image"
+                                         class="img-fluid rounded"
+                                         style="max-height: 300px; width: auto;">
+                                    <div class="text-muted mt-2">Изображение отсутствует</div>
+                                @endif
+
+                                <!-- Дополнительные изображения -->
+                                @if($content->imageLinks->count() > 1)
+                                    <div class="mt-3">
+                                        <h6>Дополнительные изображения:</h6>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            @foreach($content->imageLinks->slice(1) as $imageLink)
+                                                <img src="{{ $imageLink->link }}"
+                                                     alt="Additional image"
+                                                     class="img-thumbnail"
+                                                     style="width: 60px; height: 60px; object-fit: cover;"
+                                                     onerror="this.src='/storage/empty.png'">
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
+                        <!-- Правая колонка - информация -->
+                        <div class="col-md-8">
+                            <div class="info-table">
+                                <table class="table table-borderless">
+                                    <tr>
+                                        <th width="150">ID:</th>
+                                        <td>
+                                            <span class="badge badge-secondary">{{ $content->id }}</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>GUID:</th>
+                                        <td>
+                                            <code>{{ $content->guid }}</code>
+                                            <button class="btn btn-sm btn-outline-secondary ml-2"
+                                                    onclick="navigator.clipboard.writeText('{{ $content->guid }}')">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Название:</th>
+                                        <td>
+                                            <h5 class="mb-0">{{ $content->default_name }}</h5>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Alias:</th>
+                                        <td>
+                                            <code>{{ $content->alias }}</code>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Раздел:</th>
+                                        <td>
+                                            @if($content->subsection && $content->subsection->section)
+                                                <span class="badge badge-info">
+                                                {{ $content->subsection->section->default_name }}
+                                            </span>
+                                                →
+                                                <span class="badge badge-secondary">
+                                                {{ $content->subsection->default_name }}
+                                            </span>
+                                            @else
+                                                <span class="text-danger">Не указан</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Access Type:</th>
+                                        <td>
+                                        <span class="badge badge-{{ $content->access_type == 0 ? 'success' : 'warning' }}">
+                                            {{ $content->access_type }}
+                                        </span>
+                                            <small class="text-muted ml-2">
+                                                @if($content->access_type == 0)
+                                                    Публичный доступ
+                                                @else
+                                                    Ограниченный доступ
+                                                @endif
+                                            </small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Доступные языки:</th>
+                                        <td>
+                                            @if($content->available_locales && count($content->available_locales) > 0)
+                                                @foreach($content->available_locales as $locale)
+                                                    <span class="badge badge-primary mr-1">
+                                                    {{ strtoupper($locale) }}
+                                                </span>
+                                                @endforeach
+                                            @else
+                                                <span class="text-muted">Не указаны</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Создан:</th>
+                                        <td>
+                                            {{ $content->created_at->format('d.m.Y H:i') }}
+                                            <small class="text-muted">
+                                                ({{ $content->created_at->diffForHumans() }})
+                                            </small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Обновлен:</th>
+                                        <td>
+                                            {{ $content->updated_at->format('d.m.Y H:i') }}
+                                            <small class="text-muted">
+                                                ({{ $content->updated_at->diffForHumans() }})
+                                            </small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Версий:</th>
+                                        <td>
+                                        <span class="badge badge-info">
+                                            {{ $content->versions->count() }}
+                                        </span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Модули:</th>
+                                        <td>
+                                            @if($content->modules->count() > 0)
+                                                @foreach($content->modules as $module)
+                                                    <span class="badge badge-success mr-1">
+                                                    {{ $module->default_name }} ({{ $module->alias }})
+                                                </span>
+                                                @endforeach
+                                            @else
+                                                <span class="text-muted">Модули не назначены</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Описание -->
+                    @if($content->getDescription())
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <h5>Описание:</h5>
+                                <div class="card card-body bg-light">
+                                    {{ $content->getDescription() }}
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
 
             <!-- Локализации -->
-            <div class="card">
+            <div class="card mt-4">
                 <div class="card-header">
                     <h3 class="card-title">Локализации</h3>
                 </div>
                 <div class="card-body">
-                    @foreach(['ru', 'en', 'ar', 'zh', 'fr', 'de', 'es'] as $locale)
-                        @php
-                            $name = $content->localizedStrings
-                                ->where('type', 'name')
-                                ->where('locale', $locale)
-                                ->first();
-                            $description = $content->localizedStrings
-                                ->where('type', 'description')
-                                ->where('locale', $locale)
-                                ->first();
-                        @endphp
-                        <div class="card card-secondary mb-3">
-                            <div class="card-header">
-                                <h4 class="card-title">{{ strtoupper($locale) }}</h4>
+                    <div class="row">
+                        @foreach(['ru', 'en', 'ar', 'zh', 'fr', 'de', 'es'] as $locale)
+                            <div class="col-md-6 mb-3">
+                                <div class="card card-secondary">
+                                    <div class="card-header">
+                                        <h4 class="card-title">{{ strtoupper($locale) }}</h4>
+                                    </div>
+                                    <div class="card-body">
+                                        @php
+                                            $name = $content->localizedStrings
+                                                ->where('type', 'name')
+                                                ->where('locale', $locale)
+                                                ->first();
+                                            $description = $content->localizedStrings
+                                                ->where('type', 'description')
+                                                ->where('locale', $locale)
+                                                ->first();
+                                        @endphp
+                                        <p><strong>Название:</strong> {{ $name->value ?? 'Не указано' }}</p>
+                                        <p><strong>Описание:</strong> {{ $description->value ?? 'Не указано' }}</p>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="card-body">
-                                <p><strong>Название:</strong> {{ $name->value ?? 'Не указано' }}</p>
-                                <p><strong>Описание:</strong> {{ $description->value ?? 'Не указано' }}</p>
-                            </div>
-                        </div>
-                    @endforeach
+                        @endforeach
+                    </div>
                 </div>
             </div>
 
             <!-- Версии -->
-            <div class="card">
+            <div class="card mt-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3 class="card-title mb-0">Версии ({{ $content->versions->count() }})</h3>
                     <button type="button" class="btn btn-success btn-sm" data-toggle="modal" data-target="#uploadVersionModal">
@@ -88,17 +257,17 @@
                                 @foreach($content->versions->sortByDesc('created_at') as $version)
                                     <tr>
                                         <td>
-                                                <span class="badge badge-info">
-                                                    {{ ucfirst($version->platform) }}
-                                                </span>
+                                            <span class="badge badge-info">
+                                                {{ ucfirst($version->platform) }}
+                                            </span>
                                         </td>
                                         <td>
                                             <strong>{{ $version->major }}.{{ $version->minor }}.{{ $version->micro }}</strong>
                                         </td>
                                         <td>
-                                                <span class="badge badge-{{ $version->tested ? 'success' : 'warning' }}">
-                                                    {{ $version->tested ? 'Yes' : 'No' }}
-                                                </span>
+                                            <span class="badge badge-{{ $version->tested ? 'success' : 'warning' }}">
+                                                {{ $version->tested ? 'Yes' : 'No' }}
+                                            </span>
                                         </td>
                                         <td>
                                             @if($version->file_path && Storage::disk('public')->exists($version->file_path))
@@ -109,9 +278,9 @@
                                                 </a>
                                             @else
                                                 <span class="text-muted">
-                                                        <i class="fas fa-exclamation-triangle text-warning mr-1"></i>
-                                                        File not found
-                                                    </span>
+                                                    <i class="fas fa-exclamation-triangle text-warning mr-1"></i>
+                                                    File not found
+                                                </span>
                                             @endif
                                         </td>
                                         <td>
@@ -157,6 +326,33 @@
                             No versions uploaded yet. Click "Upload New Version" to add the first version.
                         </div>
                     @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно удаления -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Подтверждение удаления</h5>
+                    <button type="button" class="close" data-dismiss="modal">×</button>
+                </div>
+                <div class="modal-body">
+                    <p>Вы уверены, что хотите удалить контент <strong>"{{ $content->default_name }}"</strong>?</p>
+                    <p class="text-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Это действие нельзя будет отменить. Все связанные версии и файлы будут удалены.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+                    <form action="{{ route('admin.contents.destroy', $content) }}" method="POST">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger">Удалить контент</button>
+                    </form>
                 </div>
             </div>
         </div>
