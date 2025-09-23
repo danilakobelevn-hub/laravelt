@@ -12,7 +12,12 @@ class ModuleLocalizedString extends Model
 
     protected $table = 'module_localized_strings';
 
-    protected $fillable = ['module_id', 'type', 'locale', 'value'];
+    protected $fillable = [
+        'module_id',
+        'type',
+        'locale',
+        'value'
+    ];
 
     public function module(): BelongsTo
     {

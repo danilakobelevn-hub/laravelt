@@ -35,7 +35,6 @@
             <input type="hidden" name="subsection_id" value="{{ $content->subsection_id }}">
 
             <div class="card-body">
-
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
@@ -60,7 +59,6 @@
                     </div>
                 </div>
 
-
                 <div class="form-group">
                     <label>Выберите раздел и подраздел *</label>
                     <div id="sections-tree"></div>
@@ -70,86 +68,34 @@
                     @enderror
                 </div>
 
-                <div class="card card-secondary">
-                    <div class="card-header">
-                        <h3 class="card-title">Локализации</h3>
-                    </div>
-                    <div class="card-body">
-                        @foreach($locales as $locale)
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Название ({{ strtoupper($locale) }}) *</label>
-                                        <input type="text" class="form-control @error('names.'.$locale) is-invalid @enderror"
-                                               name="names[{{ $locale }}]"
-                                               value="{{ old('names.'.$locale, $content->getName($locale)) }}" required>
-                                        @error('names.'.$locale)
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Описание ({{ strtoupper($locale) }})</label>
-                                        <textarea class="form-control @error('descriptions.'.$locale) is-invalid @enderror"
-                                                  name="descriptions[{{ $locale }}]">{{ old('descriptions.'.$locale, $content->getDescription($locale)) }}</textarea>
-                                        @error('descriptions.'.$locale)
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="access_type">Access Type</label>
-                            <input type="number" class="form-control @error('access_type') is-invalid @enderror"
-                                   id="access_type" name="access_type"
-                                   value="{{ old('access_type', 0) }}" min="0" max="255">
-                            @error('access_type')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Доступные языки *</label>
-                            <select class="form-control select2 @error('available_locales') is-invalid @enderror"
-                                    name="available_locales[]" multiple required>
-                                @foreach($locales as $locale)
-                                    <option value="{{ $locale }}"
-                                        {{ in_array($locale, old('available_locales', $content->available_locales ?? [])) ? 'selected' : '' }}>
-                                        {{ strtoupper($locale) }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('available_locales')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                    </div>
-                </div>
                 <div class="form-group">
-                    <label>Модули</label>
-                    <!-- Модули -->
-                    <select class="form-control select2 @error('modules') is-invalid @enderror"
-                            name="modules[]" multiple>
-                        @foreach($modules as $module)
-                            <option value="{{ $module->id }}"
-                                {{ in_array($module->id, old('modules', $content->modules->pluck('id')->toArray())) ? 'selected' : '' }}>
-                                {{ $module->default_name }} ({{ $module->alias }})
-                            </option>
-                        @endforeach
-                    </select>
-                    @error('modules')
+                    <label for="access_type">Access Type</label>
+                    <input type="number" class="form-control @error('access_type') is-invalid @enderror"
+                           id="access_type" name="access_type"
+                           value="{{ old('access_type', $content->access_type) }}" min="0" max="255">
+                    @error('access_type')
                     <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                 </div>
 
+                <!-- Локализации -->
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h3 class="card-title">Локализации *</h3>
+                    </div>
+                    <div class="card-body">
+                        <x-admin.localizations-table
+                            :localizations="$content->localizedStrings"
+                            :editable="true"
+                            :model="$content"
+                            modelType="content" />
+                    </div>
+                    <div class="card-footer">
+                        <small class="text-muted">
+                            * Необходимо заполнить хотя бы одну локаль. Пустые строки будут проигнорированы.
+                        </small>
+                    </div>
+                </div>
 
                 <div class="card card-secondary">
                     <div class="card-header">
@@ -168,8 +114,8 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
 
-                            <!-- Показываем существующие изображения при редактировании -->
-                            @if(isset($content) && $content->imageLinks->count() > 0)
+                            <!-- Показываем существующие изображения -->
+                            @if($content->imageLinks->count() > 0)
                                 <div class="mt-3">
                                     <h6>Текущие изображения:</h6>
                                     @foreach($content->imageLinks as $imageLink)
@@ -200,8 +146,8 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
 
-                            <!-- Показываем существующие видео при редактировании -->
-                            @if(isset($content) && $content->videoLinks->count() > 0)
+                            <!-- Показываем существующие видео -->
+                            @if($content->videoLinks->count() > 0)
                                 <div class="mt-3">
                                     <h6>Текущие видео:</h6>
                                     @foreach($content->videoLinks as $videoLink)
@@ -229,11 +175,6 @@
 @push('scripts')
     <script>
         $(document).ready(function() {
-            // Инициализация Select2
-            $('.select2').select2({
-                theme: 'bootstrap4'
-            });
-
             // Инициализация jsTree
             $('#sections-tree').jstree({
                 'core': {
@@ -265,82 +206,55 @@
 
             // Валидация формы
             $('#contentForm').on('submit', function(e) {
-                if (!$('input[name="subsection_id"]').val()) {
+                const subsectionId = $('input[name="subsection_id"]').val();
+                if (!subsectionId) {
                     e.preventDefault();
                     alert('Пожалуйста, выберите подраздел');
+                    return;
+                }
+
+                // Проверяем, что заполнена хотя бы одна локализация
+                let hasValidLocalization = false;
+                $('select[name="locales[]"]').each(function() {
+                    const locale = $(this).val();
+                    const name = $(this).closest('tr').find('input[name="names[]"]').val().trim();
+                    if (locale && name) {
+                        hasValidLocalization = true;
+                        return false; // break loop
+                    }
+                });
+
+                if (!hasValidLocalization) {
+                    e.preventDefault();
+                    alert('Пожалуйста, заполните хотя бы одну локализацию (язык и название)');
                 }
             });
         });
-    </script>
-@endpush
-@push('scripts')
-    <script>
-        // Предпросмотр изображений перед загрузкой
-        document.addEventListener('DOMContentLoaded', function() {
-            // Для изображений
-            const imageInput = document.querySelector('input[name="images[]"]');
-            if (imageInput) {
-                imageInput.addEventListener('change', function(e) {
-                    previewFiles(e.target.files, 'images');
-                });
-            }
 
-            // Для видео
-            const videoInput = document.querySelector('input[name="videos[]"]');
-            if (videoInput) {
-                videoInput.addEventListener('change', function(e) {
-                    previewFiles(e.target.files, 'videos');
-                });
-            }
-
-            function previewFiles(files, type) {
-                const previewContainer = document.getElementById(type + '-preview') || createPreviewContainer(type);
-
-                // Очищаем предыдущий предпросмотр
-                previewContainer.innerHTML = '';
-
-                if (files.length > 0) {
-                    const title = document.createElement('h6');
-                    title.textContent = 'Новые файлы:';
-                    title.className = 'mt-3';
-                    previewContainer.appendChild(title);
-                }
-
-                Array.from(files).forEach(file => {
-                    const fileDiv = document.createElement('div');
-                    fileDiv.className = 'd-inline-block mr-2 mb-2 text-center';
-
-                    if (type === 'images' && file.type.startsWith('image/')) {
-                        const img = document.createElement('img');
-                        img.src = URL.createObjectURL(file);
-                        img.style.height = '60px';
-                        img.style.width = 'auto';
-                        img.className = 'img-thumbnail';
-                        fileDiv.appendChild(img);
-                    } else {
-                        const icon = document.createElement('i');
-                        icon.className = type === 'images' ? 'fas fa-image fa-2x' : 'fas fa-video fa-2x';
-                        fileDiv.appendChild(icon);
+        // Функция удаления изображения
+        function deleteImage(imageId) {
+            if (confirm('Удалить это изображение?')) {
+                // Правильное формирование URL с параметром
+                fetch('{{ route("admin.content.images.delete", ":imageId") }}'.replace(':imageId', imageId), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'X-Requested-With': 'XMLHttpRequest'
                     }
-
-                    const name = document.createElement('div');
-                    name.textContent = file.name;
-                    name.style.fontSize = '12px';
-                    name.className = 'text-truncate';
-                    name.style.maxWidth = '80px';
-                    fileDiv.appendChild(name);
-
-                    previewContainer.appendChild(fileDiv);
-                });
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('Ошибка при удалении изображения: ' + (data.error || 'Неизвестная ошибка'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Ошибка при удалении изображения');
+                    });
             }
-
-            function createPreviewContainer(type) {
-                const container = document.createElement('div');
-                container.id = type + '-preview';
-                const input = document.querySelector(`input[name="${type}[]"]`);
-                input.parentNode.appendChild(container);
-                return container;
-            }
-        });
+        }
     </script>
 @endpush

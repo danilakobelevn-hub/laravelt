@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\Admin\ContentController;
+use App\Http\Controllers\Admin\ModuleController;
 use Illuminate\Support\Facades\Route;
 
 // Админка
 Route::prefix('admin')->name('admin.')->group(function () {
+
     Route::get('/dashboard', function () {
         return view('admin.dashboard');
     })->name('dashboard');
@@ -40,9 +42,28 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/contents/{id}/restore', [ContentController::class, 'restore'])
         ->name('contents.restore');
 
+    Route::post('contents/{content}/modules/attach', [ContentController::class, 'attachModules'])
+        ->name('contents.modules.attach');
+
+    Route::delete('contents/{content}/modules/{module}/detach', [ContentController::class, 'detachModule'])
+        ->name('contents.modules.detach');
+
+    // Версии по платформе
+    Route::get('contents/{content}/platform-versions', [ContentController::class, 'platformVersions'])
+        ->name('contents.platform-versions');
+
     Route::delete('/content-images/{imageLink}', [ContentController::class, 'deleteImage'])
         ->name('content.images.delete');
 
     // Затем resource (будет обрабатываться в последнюю очередь)
     Route::resource('contents', ContentController::class);
+
+    // Редактирование версии (AJAX)
+    Route::put('versions/{version}', [ContentController::class, 'updateVersion'])->name('versions.update');
+
+    Route::post('modules/ajax-store', [ModuleController::class, 'store'])->name('modules.ajax-store');
+
+    Route::get('modules/{module}/edit-data', [ModuleController::class, 'editData'])->name('modules.edit-data');
+
+    Route::resource('modules', ModuleController::class);
 });
