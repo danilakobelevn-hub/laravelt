@@ -33,6 +33,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('contents/{content}/upload-version', [ContentController::class, 'uploadVersion'])
         ->name('contents.upload-version');
 
+    Route::get('/version-localizations/{localization}/download', [ContentController::class, 'downloadLocalization'])
+        ->name('version-localizations.download');
+
     Route::delete('contents/{content}/force', [ContentController::class, 'forceDestroy'])
         ->name('contents.force-destroy');
 

@@ -87,6 +87,7 @@
                             </a>
                         </th>
                         <th>Файл</th>
+                        <th>Локализации</th>
                         <th width="120">
                             <a href="{{ route('admin.contents.platform-versions', [
                                     'content' => $content,
@@ -158,6 +159,20 @@
                                 @endif
                             </td>
                             <td>
+                                @if($version->localizations->count() > 0)
+                                    <div class="localizations-badges">
+                                        @foreach($version->localizations as $localization)
+                                            <span class="badge badge-info mr-1" title="{{ $localization->file_name }}">
+                                                {{ strtoupper($localization->locale) }}
+                                             </span>
+                                        @endforeach
+                                    </div>
+                                    <small class="text-muted">({{ $version->localizations->count() }})</small>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
+                            </td>
+                            <td>
                                 @if($version->file_size)
                                     {{ number_format($version->file_size / 1024 / 1024, 1) }} MB
                                 @else
@@ -217,8 +232,9 @@
     </div>
 
     <!-- Модальное окно добавления версии -->
+    <!-- Модальное окно добавления версии -->
     <div class="modal fade" id="addVersionModal" tabindex="-1" role="dialog" aria-hidden="true">
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Добавить версию для {{ ucfirst($platform) }}</h5>
@@ -231,11 +247,21 @@
                     <input type="hidden" name="platform" value="{{ $platform }}">
 
                     <div class="modal-body">
-                        <div class="form-group">
-                            <label for="version_number">Версия *</label>
-                            <input type="text" class="form-control" id="version_number" name="version_number"
-                                   placeholder="1.0.0" required>
-                            <small class="form-text text-muted">Формат: major.minor.micro (например: 1.0.0)</small>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="version_number">Версия *</label>
+                                    <input type="text" class="form-control" id="version_number" name="version_number"
+                                           placeholder="1.0.0" required>
+                                    <small class="form-text text-muted">Формат: major.minor.micro (например: 1.0.0)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group form-check mt-4 pt-2">
+                                    <input type="checkbox" class="form-check-input" id="tested" name="tested" value="1">
+                                    <label class="form-check-label" for="tested">Отметить как протестированную</label>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-group">
@@ -244,18 +270,42 @@
                                       rows="3" placeholder="Что нового в этой версии?"></textarea>
                         </div>
 
-                        <div class="form-group form-check">
-                            <input type="checkbox" class="form-check-input" id="tested" name="tested" value="1">
-                            <label class="form-check-label" for="tested">Отметить как протестированную</label>
-                        </div>
-
                         <div class="form-group">
-                            <label for="file">ZIP-файл *</label>
+                            <label for="file">ZIP-файл версии *</label>
                             <div class="custom-file">
                                 <input type="file" class="custom-file-input" id="file" name="file" accept=".zip" required>
-                                <label class="custom-file-label" for="file">Выберите ZIP-файл</label>
+                                <label class="custom-file-label" for="file">Выберите ZIP-файл версии</label>
                             </div>
                             <small class="form-text text-muted">Максимальный размер: 100MB</small>
+                        </div>
+
+                        <!-- Таблица локализаций -->
+                        <div class="card card-secondary mt-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-0">Локализации версии</h6>
+                                <button type="button" class="btn btn-sm btn-primary" id="addLocalizationRow">
+                                    <i class="fas fa-plus"></i> Добавить локаль
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered" id="localizationsTable">
+                                        <thead class="thead-light">
+                                        <tr>
+                                            <th width="150">Язык</th>
+                                            <th>ZIP-файл локализации</th>
+                                            <th width="80">Действия</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        <!-- Строки будут добавляться динамически -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <small class="text-muted">
+                                    Если поле для загрузки файла пустое, локаль не будет сохранена
+                                </small>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -266,7 +316,6 @@
             </div>
         </div>
     </div>
-
     <!-- Модальное окно редактирования версии -->
     <div class="modal fade" id="editVersionModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog" role="document">
@@ -313,6 +362,137 @@
 
 @push('scripts')
     <script>
+        // Локализации для выбора
+        const availableLocales = [
+            {code: 'ru', name: 'Русский'},
+            {code: 'en', name: 'English'},
+            {code: 'ar', name: 'العربية'},
+            {code: 'zh', name: '中文'},
+            {code: 'fr', name: 'Français'},
+            {code: 'de', name: 'Deutsch'},
+            {code: 'es', name: 'Español'}
+        ];
+
+        let usedLocales = new Set();
+
+        // Функция для добавления строки локализации
+        function addLocalizationRow(selectedLocale = '') {
+            const tbody = $('#localizationsTable tbody');
+            const rowId = Date.now();
+
+            // Создаем options для select
+            let options = '<option value="">Выберите язык</option>';
+            availableLocales.forEach(locale => {
+                const selected = locale.code === selectedLocale ? 'selected' : '';
+                const disabled = usedLocales.has(locale.code) && locale.code !== selectedLocale ? 'disabled' : '';
+                options += `<option value="${locale.code}" ${selected} ${disabled}>${locale.name} (${locale.code.toUpperCase()})</option>`;
+            });
+
+            const row = `
+        <tr id="localization-row-${rowId}">
+            <td>
+                <select class="form-control form-control-sm locale-select" name="localizations[${rowId}][locale]" required>
+                    ${options}
+                </select>
+            </td>
+            <td>
+                <div class="custom-file">
+                    <input type="file" class="custom-file-input localization-file"
+                           name="localizations[${rowId}][file]" accept=".zip">
+                    <label class="custom-file-label">Выберите ZIP-файл</label>
+                </div>
+            </td>
+            <td>
+                <button type="button" class="btn btn-danger btn-sm remove-localization-row"
+                        data-row-id="${rowId}">
+                    <i class="fas fa-times"></i>
+                </button>
+            </td>
+        </tr>
+    `;
+
+            tbody.append(row);
+
+            // Если указана локаль, добавляем в использованные
+            if (selectedLocale) {
+                usedLocales.add(selectedLocale);
+                $(`#localization-row-${rowId} .locale-select`).data('old-value', selectedLocale);
+            }
+
+            // Обновляем обработчики событий
+            updateLocaleSelects();
+            initFileInputs();
+        }
+
+        // Функция для удаления строки локализации
+        function removeLocalizationRow(rowId) {
+            const row = $(`#localization-row-${rowId}`);
+            const selectedLocale = row.find('.locale-select').val();
+
+            row.remove();
+
+            if (selectedLocale) {
+                usedLocales.delete(selectedLocale);
+            }
+
+            updateLocaleSelects();
+        }
+
+        // Функция для обновления доступных локалей в select
+        function updateLocaleSelects() {
+            $('.locale-select').each(function() {
+                const currentValue = $(this).val();
+                $(this).find('option').each(function() {
+                    const optionValue = $(this).val();
+                    if (optionValue && optionValue !== currentValue && usedLocales.has(optionValue)) {
+                        $(this).prop('disabled', true);
+                    } else {
+                        $(this).prop('disabled', false);
+                    }
+                });
+            });
+        }
+
+        // Инициализация file inputs
+        function initFileInputs() {
+            $('.localization-file').off('change').on('change', function() {
+                let fileName = $(this).val().split('\\').pop();
+                $(this).next('.custom-file-label').addClass("selected").html(fileName || "Выберите ZIP-файл");
+            });
+        }
+
+        // Обработчик добавления строки
+        $('#addLocalizationRow').click(function() {
+            addLocalizationRow();
+        });
+
+        // Обработчик удаления строки
+        $(document).on('click', '.remove-localization-row', function() {
+            const rowId = $(this).data('row-id');
+            removeLocalizationRow(rowId);
+        });
+
+        // Обработчик изменения выбора локали
+        $(document).on('change', '.locale-select', function() {
+            const oldValue = $(this).data('old-value');
+            const newValue = $(this).val();
+
+            if (oldValue) {
+                usedLocales.delete(oldValue);
+            }
+            if (newValue) {
+                usedLocales.add(newValue);
+            }
+
+            $(this).data('old-value', newValue);
+            updateLocaleSelects();
+        });
+
+        // Добавляем первую строку при загрузке
+        $(document).ready(function() {
+            addLocalizationRow();
+        });
+
         $(document).ready(function() {
             // Имя файла в input
             $('.custom-file-input').on('change', function() {

@@ -388,8 +388,6 @@ class ContentController extends Controller
     }
 
     // Обновление контента
-    // app/Http/Controllers/Admin/ContentController.php
-
     public function update(Request $request, Content $content)
     {
         $validated = $request->validate([
@@ -573,7 +571,10 @@ class ContentController extends Controller
             'micro' => 'required|integer|min:0',
             'tested' => 'boolean',
             'release_note' => 'nullable|string|max:500',
-            'file' => 'required|file|mimes:zip|max:102400'
+            'file' => 'required|file|mimes:zip|max:102400',
+            'localizations' => 'nullable|array',
+            'localizations.*.locale' => 'sometimes|required|string|size:2',
+            'localizations.*.file' => 'sometimes|nullable|file|mimes:zip|max:51200'
         ]);
 
         // Альтернативная валидация через version_number
@@ -589,7 +590,8 @@ class ContentController extends Controller
         \Log::info('Upload version request received', [
             'content_id' => $content->id,
             'platform' => $validated['platform'],
-            'version' => $validated['major'] . '.' . $validated['minor'] . '.' . $validated['micro']
+            'version' => $validated['major'] . '.' . $validated['minor'] . '.' . $validated['micro'],
+            'localizations_count' => $request->localizations ? count($request->localizations) : 0
         ]);
 
         try {
@@ -626,7 +628,47 @@ class ContentController extends Controller
                 'file_size' => $file->getSize(),
             ]);
 
+            // Обрабатываем локализации
+            if ($request->has('localizations')) {
+                foreach ($request->localizations as $localizationData) {
+                    // Пропускаем если нет locale или файла
+                    if (empty($localizationData['locale']) || !isset($localizationData['file'])) {
+                        continue;
+                    }
+
+                    $localizationFile = $localizationData['file'];
+
+                    // Пропускаем если файл не загружен
+                    if (!$localizationFile || !$localizationFile->isValid()) {
+                        continue;
+                    }
+
+                    $localizationFileName = time() . '_' . $localizationFile->getClientOriginalName();
+                    $localizationFilePath = $localizationFile->storeAs('version_localizations', $localizationFileName, 'public');
+
+                    // Создаем запись локализации
+                    \App\Models\VersionLocalization::create([
+                        'version_id' => $version->id,
+                        'locale' => $localizationData['locale'],
+                        'file_name' => $localizationFile->getClientOriginalName(),
+                        'file_path' => $localizationFilePath,
+                        'file_size' => $localizationFile->getSize(),
+                    ]);
+
+                    \Log::info('Localization uploaded', [
+                        'version_id' => $version->id,
+                        'locale' => $localizationData['locale'],
+                        'file_name' => $localizationFile->getClientOriginalName()
+                    ]);
+                }
+            }
+
             DB::commit();
+
+            \Log::info('Version uploaded successfully with localizations', [
+                'version_id' => $version->id,
+                'localizations_count' => $version->localizations()->count()
+            ]);
 
             return redirect()->route('admin.contents.platform-versions', [
                 'content' => $content->id,
@@ -640,6 +682,31 @@ class ContentController extends Controller
             return back()->with('error', 'Ошибка при загрузке версии: ' . $e->getMessage());
         }
     }
+
+    // Скачивание локализации версии
+    public function downloadLocalization(VersionLocalization $localization)
+    {
+        try {
+            \Log::info("Attempting to download localization: {$localization->id}, file: {$localization->file_path}");
+
+            if (!Storage::disk('public')->exists($localization->file_path)) {
+                \Log::error("Localization file not found: {$localization->file_path}");
+                return back()->with('error', 'Файл локализации не найден на сервере');
+            }
+
+            \Log::info("Downloading localization: {$localization->file_name}");
+
+            return Storage::disk('public')->download($localization->file_path, $localization->file_name, [
+                'Content-Type' => 'application/zip',
+                'Content-Disposition' => 'attachment; filename="' . $localization->file_name . '"'
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Error downloading localization {$localization->id}: " . $e->getMessage());
+            return back()->with('error', 'Ошибка при скачивании файла локализации: ' . $e->getMessage());
+        }
+    }
+
     // Удаление версии
     public function destroyVersion(Version $version)
     {
