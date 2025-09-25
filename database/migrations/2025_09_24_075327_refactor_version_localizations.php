@@ -21,7 +21,6 @@ class RefactorVersionLocalizations extends Migration
             $table->unique(['version_id', 'locale']); // Одна локализация на язык для версии
         });
 
-        // Удаляем старые столбцы из таблицы versions
         Schema::table('versions', function (Blueprint $table) {
             $table->dropColumn([
                 'localization_file_name',
@@ -29,14 +28,12 @@ class RefactorVersionLocalizations extends Migration
                 'localization_file_size'
             ]);
 
-            // Меняем тип locale с varchar(255) на char(2) для консистентности
             $table->char('locale', 2)->default('ru')->change();
         });
     }
 
     public function down()
     {
-        // Возвращаем удаленные столбцы при откате миграции
         Schema::table('versions', function (Blueprint $table) {
             $table->string('localization_file_name')->nullable();
             $table->string('localization_file_path')->nullable();
@@ -44,7 +41,6 @@ class RefactorVersionLocalizations extends Migration
             $table->string('locale', 255)->default('ru')->change();
         });
 
-        // Удаляем новую таблицу
         Schema::dropIfExists('version_localizations');
     }
 }

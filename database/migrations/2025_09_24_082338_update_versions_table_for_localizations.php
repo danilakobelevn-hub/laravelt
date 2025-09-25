@@ -8,7 +8,6 @@ class UpdateVersionsTableForLocalizations extends Migration
 {
     public function up()
     {
-        // Удаляем старые столбцы локализации (если они существуют)
         Schema::table('versions', function (Blueprint $table) {
             if (Schema::hasColumn('versions', 'localization_file_name')) {
                 $table->dropColumn('localization_file_name');
@@ -20,11 +19,9 @@ class UpdateVersionsTableForLocalizations extends Migration
                 $table->dropColumn('localization_file_size');
             }
 
-            // Изменяем тип locale, если нужно
             $table->char('locale', 2)->default('ru')->change();
         });
 
-        // Создаем таблицу для локализаций (если еще не существует)
         if (!Schema::hasTable('version_localizations')) {
             Schema::create('version_localizations', function (Blueprint $table) {
                 $table->id();
@@ -42,7 +39,6 @@ class UpdateVersionsTableForLocalizations extends Migration
 
     public function down()
     {
-        // При откате - восстанавливаем старые столбцы
         Schema::table('versions', function (Blueprint $table) {
             $table->string('localization_file_name')->nullable();
             $table->string('localization_file_path')->nullable();
@@ -50,7 +46,6 @@ class UpdateVersionsTableForLocalizations extends Migration
             $table->string('locale', 255)->default('ru')->change();
         });
 
-        // Удаляем таблицу локализаций
         Schema::dropIfExists('version_localizations');
     }
 }

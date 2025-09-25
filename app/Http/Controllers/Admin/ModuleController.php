@@ -44,7 +44,7 @@ class ModuleController extends Controller
             'names.*' => 'required|string|max:500',
             'descriptions' => 'nullable|array',
             'descriptions.*' => 'nullable|string|max:1000',
-            'content_id' => 'required|exists:contents,id' // Добавляем обязательную проверку content_id
+            'content_id' => 'required|exists:contents,id'
         ]);
 
         // Проверяем уникальность локалей
@@ -83,7 +83,7 @@ class ModuleController extends Controller
                 }
             }
 
-            // Прикрепляем модуль к контенту (обязательно)
+            // Прикрепляем модуль к контенту
             $content = Content::findOrFail($validated['content_id']);
             $content->modules()->attach($module->id);
 

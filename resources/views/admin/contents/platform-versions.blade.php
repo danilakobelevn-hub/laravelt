@@ -232,7 +232,6 @@
     </div>
 
     <!-- Модальное окно добавления версии -->
-    <!-- Модальное окно добавления версии -->
     <div class="modal fade" id="addVersionModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
@@ -298,7 +297,6 @@
                                         </tr>
                                         </thead>
                                         <tbody>
-                                        <!-- Строки будут добавляться динамически -->
                                         </tbody>
                                     </table>
                                 </div>
@@ -380,7 +378,6 @@
             const tbody = $('#localizationsTable tbody');
             const rowId = Date.now();
 
-            // Создаем options для select
             let options = '<option value="">Выберите язык</option>';
             availableLocales.forEach(locale => {
                 const selected = locale.code === selectedLocale ? 'selected' : '';

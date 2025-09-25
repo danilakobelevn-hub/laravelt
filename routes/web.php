@@ -14,7 +14,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/contents/sections-tree', [ContentController::class, 'getSectionsTree'])
         ->name('contents.sections-tree');
 
-    // Сначала специфические маршруты
+    // Сначала маршруты
     Route::get('/subsections-by-section/{sectionId}', [ContentController::class, 'getSubsections'])
         ->name('subsections.by-section');
 
@@ -58,7 +58,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::delete('/content-images/{imageLink}', [ContentController::class, 'deleteImage'])
         ->name('content.images.delete');
 
-    // Затем resource (будет обрабатываться в последнюю очередь)
+    // resource (будет обрабатываться в последнюю очередь)
     Route::resource('contents', ContentController::class);
 
     // Редактирование версии (AJAX)

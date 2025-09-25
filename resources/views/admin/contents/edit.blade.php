@@ -220,7 +220,7 @@
                     const name = $(this).closest('tr').find('input[name="names[]"]').val().trim();
                     if (locale && name) {
                         hasValidLocalization = true;
-                        return false; // break loop
+                        return false;
                     }
                 });
 

@@ -38,7 +38,6 @@
                 </thead>
                 <tbody>
                 @if($editable)
-                    <!-- Строки будут добавляться динамически через JavaScript -->
                 @else
                     <!-- Статическое отображение для просмотра -->
                     @foreach($locales as $locale)

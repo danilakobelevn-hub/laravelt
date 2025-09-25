@@ -169,7 +169,6 @@
                     usedLocales.add(locale);
                 }
 
-                // Обновляем обработчики событий
                 updateLocaleSelects();
             }
 

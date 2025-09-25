@@ -32,7 +32,7 @@ class Content extends Model
             ->first()->value ?? $this->default_name;
     }
 
-// Получить описание на определенном языке
+    // Получить описание на определенном языке
     public function getDescription($locale = 'ru')
     {
         return $this->localizedStrings
@@ -41,19 +41,19 @@ class Content extends Model
             ->first()->value ?? null;
     }
 
-// Получить раздел и подраздел
+    // Получить раздел и подраздел
     public function getGroupPath()
     {
         return $this->subsection->section->default_name . ' → ' . $this->subsection->default_name;
     }
 
-// Проверить, есть ли версии
+    // Проверить, есть ли версии
     public function hasVersions()
     {
         return $this->versions->count() > 0;
     }
 
-// Получить последнюю версию
+    // Получить последнюю версию
     public function getLatestVersion()
     {
         return $this->versions()

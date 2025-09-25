@@ -9,7 +9,6 @@ use App\Models\Content;
 use App\Models\Version;
 use App\Models\VersionLocalization;
 use Illuminate\Http\Request;
-use App\Http\Requests\UpdateContentRequest;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -18,6 +17,7 @@ class ContentController extends Controller
 {
     /**
      * Получение всех контентов
+     * GET /api/v1/contents/all
      */
     public function all()
     {
@@ -29,7 +29,12 @@ class ContentController extends Controller
                 'availableLocales',
                 'subsection.section',
                 'modules.localizedStrings',
-                'versions'
+                'versions' => function($query) {
+                    $query->orderBy('major', 'desc')
+                        ->orderBy('minor', 'desc')
+                        ->orderBy('micro', 'desc');
+                },
+                'versions.localizations'
             ])->get();
 
             return ContentDataResource::collection($contents);
@@ -43,12 +48,12 @@ class ContentController extends Controller
 
     /**
      * Получение контента по псевдониму
+     * GET /api/v1/contents/by_alias?alias=test
      */
     public function byAlias(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'alias' => 'required|string',
-            'platform' => 'required|string|in:windows,macos,linux,android,ios,web'
         ]);
 
         if ($validator->fails()) {
@@ -66,12 +71,12 @@ class ContentController extends Controller
                 'availableLocales',
                 'subsection.section',
                 'modules.localizedStrings',
-                'versions' => function($query) use ($request) {
-                    $query->where('platform', $request->platform)
-                        ->orderBy('major', 'desc')
+                'versions' => function($query) {
+                    $query->orderBy('major', 'desc')
                         ->orderBy('minor', 'desc')
                         ->orderBy('micro', 'desc');
-                }
+                },
+                'versions.localizations'
             ])->where('alias', $request->alias)->first();
 
             if (!$content) {
@@ -89,15 +94,16 @@ class ContentController extends Controller
 
     /**
      * Загрузка новой версии
+     * POST /api/v1/contents/uploadVersion
      */
     public function uploadVersion(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'alias' => 'required|string',
             'platform' => 'required|string|in:windows,macos,linux,android,ios,web',
-            'major' => 'required|boolean',
-            'minor' => 'required|boolean',
-            'micro' => 'required|boolean',
+            'major' => 'required|string|in:true,false,1,0', // Разрешаем строки и числа
+            'minor' => 'required|string|in:true,false,1,0',
+            'micro' => 'required|string|in:true,false,1,0',
             'releaseNote' => 'nullable|string|max:500',
             'file' => 'required|file|mimes:zip|max:102400',
         ]);
@@ -112,9 +118,29 @@ class ContentController extends Controller
         try {
             \DB::beginTransaction();
 
-            $content = Content::where('alias', $request->alias)->firstOrFail();
+            $content = Content::where('alias', $request->alias)->first();
 
-            // Получаем последнюю версию
+            if (!$content) {
+                return response()->json([
+                    'error' => 'Content not found',
+                    'message' => 'Content with alias "' . $request->alias . '" not found'
+                ], 404);
+            }
+
+            $major = filter_var($request->major, FILTER_VALIDATE_BOOLEAN);
+            $minor = filter_var($request->minor, FILTER_VALIDATE_BOOLEAN);
+            $micro = filter_var($request->micro, FILTER_VALIDATE_BOOLEAN);
+
+            \Log::info('Upload version request', [
+                'alias' => $request->alias,
+                'platform' => $request->platform,
+                'major' => $major,
+                'minor' => $minor,
+                'micro' => $micro,
+                'releaseNote' => $request->releaseNote
+            ]);
+
+            // Получаем последнюю версию для этой платформы
             $latestVersion = $content->versions()
                 ->where('platform', $request->platform)
                 ->orderBy('major', 'desc')
@@ -122,47 +148,124 @@ class ContentController extends Controller
                 ->orderBy('micro', 'desc')
                 ->first();
 
-            // Вычисляем новые номера версии
-            $major = $latestVersion ? $latestVersion->major : 1;
-            $minor = $latestVersion ? $latestVersion->minor : 0;
-            $micro = $latestVersion ? $latestVersion->micro : 0;
+            \Log::info('Latest version found', [
+                'latest_version' => $latestVersion ? "{$latestVersion->major}.{$latestVersion->minor}.{$latestVersion->micro}" : 'none'
+            ]);
 
-            if ($request->boolean('major')) {
-                $major++;
-                $minor = 0;
-                $micro = 0;
-            } elseif ($request->boolean('minor')) {
-                $minor++;
-                $micro = 0;
-            } elseif ($request->boolean('micro')) {
-                $micro++;
+            // Если нет существующих версий, начинаем с 1.0.0
+            if (!$latestVersion) {
+                $majorVersion = 1;
+                $minorVersion = 0;
+                $microVersion = 0;
+
+                \Log::info('No existing versions, starting with 1.0.0');
+            } else {
+                // Берем версию из последней существующей версии
+                $majorVersion = $latestVersion->major;
+                $minorVersion = $latestVersion->minor;
+                $microVersion = $latestVersion->micro;
+
+                \Log::info('Current version', [
+                    'current' => "{$majorVersion}.{$minorVersion}.{$microVersion}"
+                ]);
+
+                // Применяем повышение версии согласно флагам
+                if ($major) {
+                    $majorVersion++;
+                    $minorVersion = 0;
+                    $microVersion = 0;
+                    \Log::info('Major increment applied');
+                } elseif ($minor) {
+                    $minorVersion++;
+                    $microVersion = 0;
+                    \Log::info('Minor increment applied');
+                } elseif ($micro) {
+                    $microVersion++;
+                    \Log::info('Micro increment applied');
+                } else {
+                    // Если ни один флаг не установлен, увеличиваем micro по умолчанию
+                    $microVersion++;
+                    \Log::info('Default micro increment applied');
+                }
+            }
+
+            // Проверяем, существует ли уже такая версия
+            $existingVersion = Version::where('content_id', $content->id)
+                ->where('platform', $request->platform)
+                ->where('major', $majorVersion)
+                ->where('minor', $minorVersion)
+                ->where('micro', $microVersion)
+                ->first();
+
+            if ($existingVersion) {
+                \Log::warning('Version already exists', [
+                    'version' => "{$majorVersion}.{$minorVersion}.{$microVersion}"
+                ]);
+
+                return response()->json([
+                    'error' => 'Version already exists',
+                    'message' => "Version {$majorVersion}.{$minorVersion}.{$microVersion} already exists for this platform"
+                ], 409);
+            }
+
+            // Валидация файла
+            if (!$request->hasFile('file')) {
+                return response()->json([
+                    'error' => 'File required',
+                    'message' => 'ZIP file is required'
+                ], 422);
+            }
+
+            $file = $request->file('file');
+            if (!$file->isValid()) {
+                return response()->json([
+                    'error' => 'Invalid file',
+                    'message' => 'Uploaded file is not valid'
+                ], 422);
             }
 
             // Сохраняем файл
-            $file = $request->file('file');
             $fileName = time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('versions', $fileName, 'public');
+
+            \Log::info('File uploaded', [
+                'original_name' => $file->getClientOriginalName(),
+                'stored_path' => $filePath,
+                'size' => $file->getSize()
+            ]);
 
             // Создаем версию
             $version = Version::create([
                 'content_id' => $content->id,
                 'platform' => $request->platform,
-                'major' => $major,
-                'minor' => $minor,
-                'micro' => $micro,
-                'tested' => false,
-                'release_note' => $request->releaseNote,
+                'major' => $majorVersion,
+                'minor' => $minorVersion,
+                'micro' => $microVersion,
+                'tested' => false, // По умолчанию не протестирована
+                'release_note' => $request->releaseNote ?: null,
                 'file_name' => $file->getClientOriginalName(),
                 'file_path' => $filePath,
                 'file_size' => $file->getSize(),
             ]);
 
+            \Log::info('Version created successfully', [
+                'version_id' => $version->id,
+                'version' => "{$version->major}.{$version->minor}.{$version->micro}",
+                'platform' => $version->platform
+            ]);
+
             \DB::commit();
 
-            return new VersionDataResource($version);
+            return new VersionDataResource($version->load('localizations'));
 
         } catch (\Exception $e) {
             \DB::rollBack();
+
+            \Log::error('Version upload failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'error' => 'Failed to upload version',
                 'message' => $e->getMessage()
@@ -172,8 +275,9 @@ class ContentController extends Controller
 
     /**
      * Загрузка локализации
+     * POST /api/v1/contents/uploadLocalizationVersion
      */
-    public function uploadLocalization(Request $request)
+    public function uploadLocalizationVersion(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'alias' => 'required|string',
@@ -196,19 +300,46 @@ class ContentController extends Controller
             $content = Content::where('alias', $request->alias)->firstOrFail();
 
             // Парсим версию
-            [$major, $minor, $micro] = array_map('intval', explode('.', $request->versionData));
+            $versionParts = explode('.', $request->versionData);
+            if (count($versionParts) !== 3) {
+                return response()->json([
+                    'error' => 'Invalid version format',
+                    'message' => 'Version must be in format major.minor.micro'
+                ], 422);
+            }
+
+            [$major, $minor, $micro] = array_map('intval', $versionParts);
 
             $version = $content->versions()
                 ->where('platform', $request->platform)
                 ->where('major', $major)
                 ->where('minor', $minor)
                 ->where('micro', $micro)
-                ->firstOrFail();
+                ->first();
+
+            if (!$version) {
+                return response()->json([
+                    'error' => 'Version not found',
+                    'message' => "Version {$major}.{$minor}.{$micro} not found for platform {$request->platform}"
+                ], 404);
+            }
+
+            // Проверяем, существует ли уже локализация для этого языка
+            $existingLocalization = $version->localizations()
+                ->where('locale', $request->lang)
+                ->first();
+
+            if ($existingLocalization) {
+                return response()->json([
+                    'error' => 'Localization already exists',
+                    'message' => "Localization for language {$request->lang} already exists for this version"
+                ], 409);
+            }
 
             // Сохраняем файл
             $file = $request->file('file');
             $fileName = time() . '_' . $file->getClientOriginalName();
-            $filePath = $file->storeAs('localizations', $fileName, 'public');
+            $filePath = $file->storeAs('version_localizations', $fileName, 'public');
 
             $localization = $version->localizations()->create([
                 'locale' => $request->lang,
@@ -231,12 +362,13 @@ class ContentController extends Controller
     }
 
     /**
-     * Скачивание контента
+     * Скачивание последней версии контента
+     * GET /api/v1/contents/download?alias=test&platform=android
      */
     public function download(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'fileName' => 'required|string',
+            'alias' => 'required|string',
             'platform' => 'required|string|in:windows,macos,linux,android,ios,web',
         ]);
 
@@ -248,17 +380,60 @@ class ContentController extends Controller
         }
 
         try {
-            $version = Version::where('file_name', $request->fileName)
-                ->where('platform', $request->platform)
-                ->first();
+            $content = Content::where('alias', $request->alias)->first();
 
-            if (!$version || !Storage::disk('public')->exists($version->file_path)) {
-                return response()->json(['error' => 'File not found'], 404);
+            if (!$content) {
+                return response()->json(['error' => 'Content not found'], 404);
             }
 
-            return Storage::disk('public')->download($version->file_path);
+            // Ищем последнюю протестированную версию
+            $version = $content->versions()
+                ->where('platform', $request->platform)
+                ->where('tested', true)
+                ->orderBy('major', 'desc')
+                ->orderBy('minor', 'desc')
+                ->orderBy('micro', 'desc')
+                ->first();
+
+            // Если нет протестированной версии, ищем любую последнюю
+            if (!$version) {
+                $version = $content->versions()
+                    ->where('platform', $request->platform)
+                    ->orderBy('major', 'desc')
+                    ->orderBy('minor', 'desc')
+                    ->orderBy('micro', 'desc')
+                    ->first();
+            }
+
+            if (!$version) {
+                return response()->json([
+                    'error' => 'Version not found',
+                    'message' => 'No versions found for this platform'
+                ], 404);
+            }
+
+            if (!Storage::disk('public')->exists($version->file_path)) {
+                return response()->json([
+                    'error' => 'File not found',
+                    'message' => 'Version file not found on server'
+                ], 404);
+            }
+            
+            \Log::info("API download version", [
+                'content_alias' => $request->alias,
+                'platform' => $request->platform,
+                'version' => "{$version->major}.{$version->minor}.{$version->micro}",
+                'file_name' => $version->file_name
+            ]);
+
+            return Storage::disk('public')->download(
+                $version->file_path,
+                $version->file_name,
+                ['Content-Type' => 'application/zip']
+            );
 
         } catch (\Exception $e) {
+            \Log::error("API download error: " . $e->getMessage());
             return response()->json([
                 'error' => 'Download failed',
                 'message' => $e->getMessage()
@@ -267,13 +442,15 @@ class ContentController extends Controller
     }
 
     /**
-     * Скачивание локализации
+     * Скачивание последней версии локализации контента
+     * GET /api/v1/contents/downloadLocalization?alias=test&platform=android&lang=en
      */
     public function downloadLocalization(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'fileName' => 'required|string',
+            'alias' => 'required|string',
             'platform' => 'required|string|in:windows,macos,linux,android,ios,web',
+            'lang' => 'required|string|size:2',
         ]);
 
         if ($validator->fails()) {
@@ -284,17 +461,74 @@ class ContentController extends Controller
         }
 
         try {
-            $localization = VersionLocalization::whereHas('version', function($query) use ($request) {
-                $query->where('platform', $request->platform);
-            })->where('file_name', $request->fileName)->first();
+            $content = Content::where('alias', $request->alias)->first();
 
-            if (!$localization || !Storage::disk('public')->exists($localization->file_path)) {
-                return response()->json(['error' => 'File not found'], 404);
+            if (!$content) {
+                return response()->json(['error' => 'Content not found'], 404);
             }
 
-            return Storage::disk('public')->download($localization->file_path);
+            // Ищем последнюю протестированную версию
+            $version = $content->versions()
+                ->where('platform', $request->platform)
+                ->where('tested', true)
+                ->orderBy('major', 'desc')
+                ->orderBy('minor', 'desc')
+                ->orderBy('micro', 'desc')
+                ->first();
+
+            // Если нет протестированной версии, ищем любую последнюю
+            if (!$version) {
+                $version = $content->versions()
+                    ->where('platform', $request->platform)
+                    ->orderBy('major', 'desc')
+                    ->orderBy('minor', 'desc')
+                    ->orderBy('micro', 'desc')
+                    ->first();
+            }
+
+            if (!$version) {
+                return response()->json([
+                    'error' => 'Version not found',
+                    'message' => 'No versions found for this platform'
+                ], 404);
+            }
+
+            // Ищем локализацию для указанного языка
+            $localization = $version->localizations()
+                ->where('locale', $request->lang)
+                ->first();
+
+            if (!$localization) {
+                return response()->json([
+                    'error' => 'Localization not found',
+                    'message' => "Localization for language {$request->lang} not found"
+                ], 404);
+            }
+
+            if (!Storage::disk('public')->exists($localization->file_path)) {
+                return response()->json([
+                    'error' => 'File not found',
+                    'message' => 'Localization file not found on server'
+                ], 404);
+            }
+
+            // Логируем скачивание
+            \Log::info("API download localization", [
+                'content_alias' => $request->alias,
+                'platform' => $request->platform,
+                'lang' => $request->lang,
+                'version' => "{$version->major}.{$version->minor}.{$version->micro}",
+                'file_name' => $localization->file_name
+            ]);
+
+            return Storage::disk('public')->download(
+                $localization->file_path,
+                $localization->file_name,
+                ['Content-Type' => 'application/zip']
+            );
 
         } catch (\Exception $e) {
+            \Log::error("API download localization error: " . $e->getMessage());
             return response()->json([
                 'error' => 'Download failed',
                 'message' => $e->getMessage()
@@ -304,6 +538,7 @@ class ContentController extends Controller
 
     /**
      * Получение непротестированных контентов
+     * GET /api/v1/contents/qa
      */
     public function qaIndex()
     {
@@ -316,8 +551,12 @@ class ContentController extends Controller
                 'subsection.section',
                 'modules.localizedStrings',
                 'versions' => function($query) {
-                    $query->where('tested', false);
-                }
+                    $query->where('tested', false)
+                        ->orderBy('major', 'desc')
+                        ->orderBy('minor', 'desc')
+                        ->orderBy('micro', 'desc');
+                },
+                'versions.localizations'
             ])->get();
 
             return ContentDataResource::collection($contents);
@@ -331,11 +570,20 @@ class ContentController extends Controller
 
     /**
      * Пометить версию как протестированную
+     * PATCH /api/v1/contents/versions/{version}/test
      */
     public function markAsTested(Version $version)
     {
         try {
             $version->update(['tested' => true]);
+
+            \Log::info("Version marked as tested", [
+                'version_id' => $version->id,
+                'content_id' => $version->content_id,
+                'platform' => $version->platform,
+                'version' => "{$version->major}.{$version->minor}.{$version->micro}"
+            ]);
+
             return new VersionDataResource($version->load('localizations'));
         } catch (\Exception $e) {
             return response()->json([
@@ -347,12 +595,16 @@ class ContentController extends Controller
 
     /**
      * Получить непротестированные версии
+     * GET /api/v1/contents/untested
      */
     public function untestedVersions()
     {
         try {
             $versions = Version::with(['content', 'localizations'])
                 ->where('tested', false)
+                ->orderBy('major', 'desc')
+                ->orderBy('minor', 'desc')
+                ->orderBy('micro', 'desc')
                 ->get();
 
             return VersionDataResource::collection($versions);

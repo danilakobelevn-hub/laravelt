@@ -472,9 +472,6 @@ class ContentController extends Controller
                 ]);
             }
 
-            // Обработка файлов (остается без изменений)
-            // ... существующий код обработки файлов ...
-
             DB::commit();
 
             \Log::info('Content updated successfully: ' . $content->id);
@@ -609,7 +606,6 @@ class ContentController extends Controller
                 return back()->with('error', 'Версия ' . $validated['major'] . '.' . $validated['minor'] . '.' . $validated['micro'] . ' уже существует для этой платформы');
             }
 
-            // Handle file upload
             $file = $request->file('file');
             $fileName = time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('versions', $fileName, 'public');
