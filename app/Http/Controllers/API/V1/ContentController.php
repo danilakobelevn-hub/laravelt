@@ -37,7 +37,10 @@ class ContentController extends Controller
                 'versions.localizations'
             ])->get();
 
+            // Отключаем обертку data для коллекции
+            ContentDataResource::withoutWrapping();
             return ContentDataResource::collection($contents);
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch contents',
@@ -83,7 +86,10 @@ class ContentController extends Controller
                 return response()->json(['error' => 'Content not found'], 404);
             }
 
+            // Отключаем обертку data для единичного ресурса
+            ContentDataResource::withoutWrapping();
             return new ContentDataResource($content);
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch content',
@@ -101,7 +107,7 @@ class ContentController extends Controller
         $validator = Validator::make($request->all(), [
             'alias' => 'required|string',
             'platform' => 'required|string|in:windows,macos,linux,android,ios,web',
-            'major' => 'required|string|in:true,false,1,0', // Разрешаем строки и числа
+            'major' => 'required|string|in:true,false,1,0',
             'minor' => 'required|string|in:true,false,1,0',
             'micro' => 'required|string|in:true,false,1,0',
             'releaseNote' => 'nullable|string|max:500',
@@ -127,6 +133,7 @@ class ContentController extends Controller
                 ], 404);
             }
 
+            // Конвертируем строковые boolean в настоящие boolean
             $major = filter_var($request->major, FILTER_VALIDATE_BOOLEAN);
             $minor = filter_var($request->minor, FILTER_VALIDATE_BOOLEAN);
             $micro = filter_var($request->micro, FILTER_VALIDATE_BOOLEAN);
@@ -241,7 +248,7 @@ class ContentController extends Controller
                 'major' => $majorVersion,
                 'minor' => $minorVersion,
                 'micro' => $microVersion,
-                'tested' => false, // По умолчанию не протестирована
+                'tested' => false,
                 'release_note' => $request->releaseNote ?: null,
                 'file_name' => $file->getClientOriginalName(),
                 'file_path' => $filePath,
@@ -256,6 +263,8 @@ class ContentController extends Controller
 
             \DB::commit();
 
+            // Отключаем обертку data для версии
+            VersionDataResource::withoutWrapping();
             return new VersionDataResource($version->load('localizations'));
 
         } catch (\Exception $e) {
@@ -350,6 +359,8 @@ class ContentController extends Controller
 
             \DB::commit();
 
+            // Отключаем обертку data
+            VersionDataResource::withoutWrapping();
             return new VersionDataResource($version->load('localizations'));
 
         } catch (\Exception $e) {
@@ -418,7 +429,8 @@ class ContentController extends Controller
                     'message' => 'Version file not found on server'
                 ], 404);
             }
-            
+
+            // Логируем скачивание
             \Log::info("API download version", [
                 'content_alias' => $request->alias,
                 'platform' => $request->platform,
@@ -559,7 +571,10 @@ class ContentController extends Controller
                 'versions.localizations'
             ])->get();
 
+            // Отключаем обертку data
+            ContentDataResource::withoutWrapping();
             return ContentDataResource::collection($contents);
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch QA contents',
@@ -584,7 +599,10 @@ class ContentController extends Controller
                 'version' => "{$version->major}.{$version->minor}.{$version->micro}"
             ]);
 
+            // Отключаем обертку data
+            VersionDataResource::withoutWrapping();
             return new VersionDataResource($version->load('localizations'));
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to mark version as tested',
@@ -607,7 +625,10 @@ class ContentController extends Controller
                 ->orderBy('micro', 'desc')
                 ->get();
 
+            // Отключаем обертку data
+            VersionDataResource::withoutWrapping();
             return VersionDataResource::collection($versions);
+
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to fetch untested versions',
