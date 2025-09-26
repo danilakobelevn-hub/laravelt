@@ -40,4 +40,21 @@ class Version extends Model
     {
         return $this->hasMany(VersionLocalization::class);
     }
+
+    public function scopeLatestVersion($query)
+    {
+        return $query->orderBy('major', 'desc')
+            ->orderBy('minor', 'desc')
+            ->orderBy('micro', 'desc');
+    }
+
+    public function scopeTested($query, bool $tested = true)
+    {
+        return $query->where('tested', $tested);
+    }
+
+    public function scopeByPlatform($query, string $platform)
+    {
+        return $query->where('platform', $platform);
+    }
 }
